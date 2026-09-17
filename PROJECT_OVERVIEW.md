@@ -1,97 +1,105 @@
-# 🐾 PawSentry AI — Resumen Ejecutivo y Estado del Proyecto
+# 🐾 PawSentry AI — Master Project Overview & System Architecture
 
 > **"An edge multimodal AI agent for real-time pet behavioral monitoring and wellness analytics powered by NVIDIA Nemotron on Nebius open infrastructure."**
 
 ---
 
-## 📌 1. Información General del Evento
-* **Evento:** [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) (Devpost)
-* **Premios en juego:** +,000 USD en efectivo + dispositivos NVIDIA Jetson Orin Nano + ,000 USD Premio "Best Use of Tavily".
-* **Track Principal:** **Physical AI Track** *(Sensing y agentes en el mundo real, cámaras/IoT, inferencia en el borde y nube)*.
-* **Track Secundario / Alternativo:** **Best Apps and Agents Track** & **Personal AI**.
-* **Estado de Inscripción:** ✅ **Inscrito con éxito** en Devpost y en el programa **Nebius Builders**.
-* **Créditos conseguidos:**  USD en créditos para Nebius Token Factory +  USD en Tavily API.
+## 📌 1. Hackathon & Submission Overview
+* **Event:** [Nebius x NVIDIA Global AI Hackathon](https://nebiusglobalaihackathon.devpost.com/) (Devpost)
+* **Prizes in scope:** +$50,000 USD Grand/Place Prizes + NVIDIA Jetson Orin Nano + **$3,000 USD Best Use of Tavily**.
+* **Primary Track:** **Physical AI Track** *(Embodied and edge agents, IoT, camera sensing, temporal micro-events, hybrid edge/cloud inference)*.
+* **Secondary Track Alignment:** **Best Apps and Agents Track** & **Personal AI**.
+* **Presentation Language:** **English by Default** *(mandatory for global Devpost judging and 3-minute video presentation)* with multi-language support (English / Spanish).
+* **Official Branding:** Validated 3:2 Hackathon Thumbnail generated and active on Devpost (`pawsentry_thumbnail.jpg`).
 
 ---
 
-## 🎯 2. ¿De qué trata nuestro Proyecto? (Propuesta de Valor)
+## 🎯 2. Core Value Proposition & Physical AI Differentiators
 
-### El Problema
-Millones de personas dejan a sus mascotas solas durante el día y se preocupan por su bienestar. Los animales no pueden comunicarse verbalmente y por instinto evolutivo tienden a enmascarar o disimular el dolor, el estrés y la enfermedad hasta que la condición se vuelve crítica. Las cámaras de seguridad convencionales son pasivas: graban horas de video inútil que nadie tiene tiempo de revisar y no entienden lo que ocurre.
+### The Challenge
+Pets cannot verbally communicate pain, fatigue, or illness, and instinctively mask discomfort until acute stages. Traditional security cameras are passive and record hundreds of hours of raw footage without semantic comprehension.
 
-### Nuestra Solución: PawSentry AI
-**PawSentry AI** es un agente inteligente físico y multimodal que convierte cualquier cámara cotidiana (webcam, cámara USB o IP) en un **asistente de salud y diario interactivo para tu mascota**:
-
-1. **Monitoreo Edge Inteligente:** No envía video continuo a la nube (lo cual sería costoso e ineficiente). Detecta movimiento y presencia localmente, extrayendo solo fotogramas o micro-clips cuando ocurre un evento de interés (alimentación, hidratación, descanso, agitación, rascado, maullidos/ladridos en la puerta).
-2. **Razonamiento Multimodal con NVIDIA Nemotron en Nebius:** Envía las escenas clave a **Nebius Token Factory**, donde modelos multimodales de NVIDIA interpretan el lenguaje corporal, postura, nivel de energía y conducta del animal.
-3. **Validación Veterinaria con Tavily Search:** Si se detecta un patrón anómalo (ejemplo: letargo inusual, rascado compulsivo, caída del 40% en consumo de agua), el agente investiga automáticamente en fuentes veterinarias confiables usando **Tavily API**.
-4. **Pet Daily Digest & Álbum de Momentos:** Al final del día (o a demanda), genera un resumen con:
-   - Puntuación de bienestar y nivel de actividad.
-   - Bitácora horaria de hábitos.
-   - Las mejores fotos/momentos destacados del día con descripciones empáticas.
-   - Chat interactivo: *"¿Cómo viste a Firulais hoy? ¿Comió bien?"*.
-
----
-
-## 🏗️ 3. Arquitectura y Stack Tecnológico
-
-`
- [ Cámara Web / USB / IP ]
-           │
-           ▼
- [ Detección Local / Edge (Python + OpenCV) ]
-    * Filtro de movimiento y cambios de escena
-    * Captura de fotogramas nítidos
-           │
-           ▼
- [ Inferencia en la Nube (Nebius Token Factory) ]
-    * NVIDIA Multimodal / Vision (Llama-3.2-Vision / Nemotron Vision)
-    * Análisis postural, conductual y emocional estructurado (JSON)
-           │
-           ├──► [ Consulta Veterinaria / Síntomas: Tavily Search API ]
-           │
-           ▼
- [ Motor de Síntesis y Razonamiento ]
-    * NVIDIA Nemotron 70B / 3 Ultra (Vía Nebius API)
-    * Correlación de eventos diarios y redacción del "Daily Digest"
-           │
-           ▼
- [ Interfaz de Usuario: Streamlit Dashboard ]
-    * Monitor en vivo y timeline de eventos
-    * Métricas de salud (sueño, actividad, ingesta)
-    * Galería de momentos destacados y Chat Asistente
-`
+### The PawSentry AI Solution
+1. **Edge Sensing with Temporal Micro-Event Bursting:**
+   - Instead of streaming continuous high-bandwidth video, a local OpenCV engine (`core/detector.py`) with MOG2 background subtraction and a circular pre-roll buffer captures **3-frame micro-event bursts** (`01_onset`, `02_peak`, `03_post`).
+   - Enables NVIDIA Vision models to analyze physical trajectory, biomechanics (e.g. limping, sudden jumps, eating posture) rather than just static snapshots.
+2. **Cloud Multimodal & Reasoning on Nebius Token Factory:**
+   - **Vision Ingestion:** Serves `openbmb/MiniCPM-V-4_5` on Nebius for high-speed multi-frame classification of pet activity, posture, and mood into Pydantic v2 schemas.
+   - **Reasoning Synthesis:** Serves `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` (and `nvidia/Nemotron-3-Ultra-550b-a55b`) for deep habit correlation, comfort indexing, and empathetic narrative generation.
+3. **Evidence-Based Veterinary Triage via Tavily API:**
+   - When anomalous behavior is flagged (e.g. compulsive ear scratching, sudden >30% drop in activity), the system autonomously queries authoritative clinical domains (`petmd.com`, `aspca.org`, `akc.org`, `vcaanimalhospitals.com`), attaching verified sources and urgency levels.
+4. **Habit Matrix & Proactive Alerts:**
+   - Correlates water visits, food visits, estimated sleep/active hours, and calculates the **Comfort Index (0-100)** with alerts when metrics deviate significantly from baseline.
 
 ---
 
-## ✅ 4. Todo lo que hemos realizado hasta ahora
+## 🏗️ 3. Architecture & Modular File Tree
 
-1. **Registro y Setup en el Hackathon:**
-   - Creación del proyecto en Devpost bajo el nombre **PawSentry AI**.
-   - Registro en **Nebius Builders Program** y obtención de créditos de inferencia y Tavily.
-2. **Identidad Visual / Branding:**
-   - Generación del **Thumbnail oficial en ratio 3:2** (pawsentry_thumbnail.jpg) con estética Physical AI / HUD holográfico.
-   - Subida y configuración del thumbnail en la plataforma Devpost.
-3. **Entorno de Desarrollo Local:**
-   - Verificación de Python 3.13 en el sistema.
-   - Creación del entorno virtual aislado .venv.
-   - Instalación completa de librerías (opencv-python, openai, streamlit, 	avily-python, pydantic, python-dotenv).
-4. **Configuración y Seguridad:**
-   - Creación de .env.example con las variables para Nebius Token Factory, NVIDIA models y Tavily.
-5. **Validación de Hardware / Cámaras:**
-   - Desarrollo y ejecución de camera_test.py.
-   - Detección exitosa de **2 cámaras operativas** en Windows con backend DirectShow y aceleración NVIDIA.
-   - Captura y verificación de fotogramas de prueba (	est_camera_0.jpg y 	est_camera_1.jpg).
+Strictly decoupled layer architecture conforming to `PROJECT_RULES.md`:
+
+```
+g:/Users/mikit/Workspace/NxN/
+├── .env                       # Live credentials (NEBIUS_API_KEY, TAVILY_API_KEY, models)
+├── .env.example               # Clean sanitized template for public open-source submission
+├── PROJECT_RULES.md           # Engineering guidelines (Strict typing, Pydantic v2, Mock fallback)
+├── PROJECT_OVERVIEW.md        # Master documentation and status (This file)
+├── README.md                  # Public-facing documentation for GitHub repository
+├── requirements.txt           # Python dependencies (OpenCV, OpenAI, Tavily, Streamlit, Pydantic)
+├── pawsentry_thumbnail.jpg    # Official 3:2 hackathon thumbnail
+├── camera_test.py             # Hardware verification utility (Windows DirectShow, cams 0 & 1)
+├── core/
+│   ├── __init__.py
+│   ├── schemas.py             # Strongly typed Pydantic v2 models (BehaviorAnalysis, DailyPetReport, etc.)
+│   ├── detector.py            # Edge motion detector, MOG2, circular pre-roll & 3-frame burst engine
+│   ├── nebius_client.py       # Nebius Token Factory client with NVIDIA Nemotron & MiniCPM-V (Mock & Live)
+│   ├── vet_advisor.py         # Tavily Search API client with vetted veterinary domain filtering
+│   └── report_generator.py    # Habit matrix calculator, daily report synthesis & chat memory
+├── data/
+│   ├── events.json            # Local persistent event log
+│   └── snapshots/             # Timestamped captured micro-event bursts
+└── app.py                     # Presentation Layer (Streamlit reactive dashboard)
+```
+
+---
+
+## 🟢 4. Production Verification Status (Tested & Validated)
+
+All credentials and models have been tested in production with live credits:
+* **Nebius Token Factory:** Authenticated (`HTTP 200 OK`).
+  * Vision Model: `openbmb/MiniCPM-V-4_5` — Tested live with real webcam frames.
+  * Reasoning Model: `nvidia/NVIDIA-Nemotron-3-Nano-30B-A3B` — Tested live for narrative and chat.
+  * Ultra Model: `nvidia/Nemotron-3-Ultra-550b-a55b` — Configured for deep reports.
+* **Tavily Search API:** Authenticated (`HTTP 200 OK`).
+  * Verified live queries returning medical sources from PetMD, GoodRx Pet, and Animal Hospitals.
+* **Hardware & Edge:**
+  * DirectShow captures on camera indices 0 and 1 validated on Windows.
+  * 3-frame temporal burst (`onset`, `peak`, `post`) functioning with 0.1-3.0s cooldown.
+* **Current App:**
+  * Running locally on `http://localhost:8501`.
 
 ---
 
-## 🚀 5. Roadmap de Próximos Pasos
+## 🎨 5. Next Stage: High-End UI/UX Redesign (Hand-off to Claude Sonnet)
 
-* [ ] **Módulo Edge (core/detector.py):** Lógica para detectar presencia de la mascota y guardar snapshots solo cuando ocurre actividad relevante.
-* [ ] **Cliente Nebius (core/nebius_client.py):** Integración con la API de Nebius Token Factory para enviar fotos y recibir respuestas estructuradas con modelos de NVIDIA (con soporte mock/fallback para desarrollo offline).
-* [ ] **Motor de Reportes y Tavily (core/report_generator.py):** Algoritmo que procesa el historial del día, consulta a Tavily ante dudas médicas y redacta el resumen de salud.
-* [ ] **Dashboard Web (pp.py):** Aplicación interactiva en Streamlit para visualizar la cámara, el timeline con fotos, gráficos de actividad y el chat.
-* [ ] **Preparación para la entrega:** Grabación del video demo de 3 minutos (mostrando la cámara apuntando a la mascota/escena + funcionamiento de la app) y repositorio con licencia Open Source (MIT/Apache 2.0).
+### Objective
+Redesign `app.py` into a world-class, competition-winning dashboard designed specifically for judges and demo videos.
+
+### Key Requirements for the UI Redesign:
+1. **Internationalization (i18n):**
+   - **Default Language: English (`en`)**, with an instant toggle to Spanish (`es`).
+   - All labels, metrics, cards, chat prompts, and system messages must support both languages smoothly (e.g. via a clean dictionary mapping in `core/i18n.py` or within `app.py`).
+2. **Visual Identity & Design System:**
+   - **Palette:** Cyber-emerald (`#10B981`), Tech Cyan (`#06B6D4`), Deep Slate/Navy (`#0B1329` and `#1E293B`), Alert Amber (`#F59E0B`), Critical Red (`#EF4444`).
+   - **Aesthetics:** Glassmorphism (`backdrop-filter: blur(12px)`), high-contrast accessible typography, rounded modern cards (`16px`), subtle glows matching `pawsentry_thumbnail.jpg`.
+3. **Module Layouts & Polish:**
+   - **Live Physical AI HUD:** Visual frame with corner HUD reticles, live blinking status pill (`PHYSICAL AI SENSING: ACTIVE`), camera selector, and dual action triggers (Instant Burst vs Single Shot).
+   - **Micro-Event Temporal Showcase:** Visual 3-frame carousel (`01 Onset` -> `02 Peak` -> `03 Post`) with smooth badges for Activity, Posture, Mood, and Energy Gauge.
+   - **Habit Matrix Analytics:** Plotly or Altair interactive radial gauge / radar chart for Comfort Index, hydration frequency vs baseline, and sleep/activity breakdown.
+   - **Clinical Triage Accordion:** Clean medical alert cards highlighting Tavily citations with clickable badge links to PetMD/ASPCA.
+   - **Interactive Nemotron Chat:** Floating / streamlined chat panel with preset suggestion chips (*"How did Toby sleep today?"*, *"Did he drink enough water?"*, *"Any health anomalies detected?"*).
+4. **Skills & Guidelines for the Design Model:**
+   - Use `generative_ui` principles: self-contained clean CSS, CSS custom properties, semantic contrast, responsive containers.
+   - Maintain strict separation of concerns: UI must remain in `app.py` and never import OpenCV internals or execute raw HTTP calls outside `core/`.
 
 ---
-*Archivo generado automáticamente para el equipo de desarrollo de PawSentry AI.*
+*Generated by Senior AI Architect & Lead Engineer for PawSentry AI.*

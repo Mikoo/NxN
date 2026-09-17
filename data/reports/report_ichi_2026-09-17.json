@@ -1,0 +1,38 @@
+{
+  "date": "2026-09-17",
+  "pet_name": "Ichi",
+  "pet_id": "ichi",
+  "overall_wellness_score": 94,
+  "summary_narrative": "Ichi exhibited consistent relaxed behavior throughout the day, with normal drinking, eating, and activity levels, indicating good health and comfort. No signs of distress, injury, or abnormal behavior were recorded, reflecting stable energy and mood.",
+  "key_highlights": [
+    "Maintained relaxed posture during drinking and resting",
+    "Normal gait and alertness during walking",
+    "Consistent hydration and feeding patterns"
+  ],
+  "alerts": [],
+  "metrics": {
+    "water_visits_count": 2,
+    "food_visits_count": 1,
+    "sleep_hours_estimated": 11.2,
+    "active_hours_estimated": 1.0,
+    "comfort_index": 99.0,
+    "activity_variance_vs_baseline": -71.4,
+    "total_bouts_count": 22,
+    "rest_bouts_count": 11,
+    "active_bouts_count": 8,
+    "hydration_score": 95.0,
+    "nutrition_score": 90.0,
+    "mobility_score": 100.0
+  },
+  "recommended_actions": [
+    "Ensure fresh water is always available",
+    "Provide interactive toys to sustain mental stimulation",
+    "Monitor weight and appetite regularly"
+  ],
+  "highlight_image_paths": [
+    "test_camera_0.jpg",
+    "G:\\Users\\mikit\\Workspace\\NxN\\data\\snapshots\\sentry_20260917_141354_01_onset.jpg",
+    "G:\\Users\\mikit\\Workspace\\NxN\\data\\snapshots\\sentry_20260917_141354_02_peak.jpg",
+    "G:\\Users\\mikit\\Workspace\\NxN\\data\\snapshots\\sentry_20260917_141354_03_post.jpg"
+  ]
+}

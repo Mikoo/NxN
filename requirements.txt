@@ -5,3 +5,4 @@ tavily-python
 python-dotenv
 pydantic
 streamlit
+plotly
