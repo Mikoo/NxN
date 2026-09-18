@@ -106,6 +106,7 @@ class NebiusClient:
                 self._client = OpenAI(
                     api_key=self.api_key,
                     base_url=self.base_url,
+                    timeout=30.0,
                 )
                 logger.info(
                     "NebiusClient conectado a Token Factory [%s] con modelos: Vision=%s, Reasoning=%s",

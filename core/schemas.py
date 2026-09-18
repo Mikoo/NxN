@@ -245,4 +245,5 @@ class VetConsultationResult(BaseModel):
     potential_causes: List[str] = Field(default_factory=list)
     recommended_actions: List[str] = Field(default_factory=list)
     sources: List[str] = Field(default_factory=list)
+    clinical_confidence: float = Field(default=0.88, ge=0.0, le=1.0)
 

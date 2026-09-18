@@ -1,4 +1,4 @@
-"""
+﻿"""
 app.py — PawSentry AI · Autonomous Multi-Pet Edge Sentinel
 Presentation layer only. Business and AI logic lives in core/.
 Full bilingual support (English default for hackathon judges, Spanish switch).
@@ -574,54 +574,29 @@ with st.expander(f"⚙️  {t('hardware_title', lang=lang)} & Settings", expande
             f"Vision: <code>{st.session_state.nebius.vision_model.split('/')[-1]}</code></span>",
             unsafe_allow_html=True,
         )
-        if st.button(t("toggle_mock_btn", lang=lang), use_container_width=True):
+        if st.button(t("toggle_mock_btn", lang=lang), width="stretch"):
             st.session_state.nebius.mock = not st.session_state.nebius.mock
             st.session_state.vet.mock    = not st.session_state.vet.mock
             st.rerun()
 
-# ── 🐾 MULTI-PET ROSTER BAR (QUICK SWAP) ──────────────────────────────────────
-st.markdown("<div style='margin-bottom:6px;'></div>", unsafe_allow_html=True)
-roster_cols = st.columns([len(st.session_state.pets) * 1.8, 1.2])
-
-with roster_cols[0]:
-    r_cols = st.columns(len(st.session_state.pets))
-    for i, p in enumerate(st.session_state.pets):
-        is_active = (p.pet_id == active_pet.pet_id)
-        icon = _ICONS.get(p.species, "🐾")
-        btn_label = f"{icon} {p.name}  {'✓' if is_active else ''}"
-        with r_cols[i]:
-            if st.button(
-                btn_label,
-                key=f"swap_pet_{p.pet_id}",
-                type="primary" if is_active else "secondary",
-                use_container_width=True,
-            ):
-                st.session_state.active_pet_id = p.pet_id
-                st.rerun()
-
-with roster_cols[1]:
-    add_lbl = "➕ Add Pet" if lang == "en" else "➕ Añadir Mascota"
-    show_add_modal = st.button(add_lbl, use_container_width=True)
-
-# Register New Pet Form
-add_title = "📝 Register New Household Pet" if lang == "en" else "📝 Registrar Nueva Mascota del Hogar"
-with st.expander(add_title, expanded=show_add_modal):
+# ── MODAL DIALOGS (STREAMLIT 1.63+ NATIVE) ───────────────────────────────────
+@st.dialog("➕ " + ("Register New Household Pet" if lang == "en" else "Registrar Nueva Mascota"))
+def add_pet_dialog():
     f_c1, f_c2 = st.columns(2)
     with f_c1:
-        new_name = st.text_input("Pet Name" if lang=="en" else "Nombre de Mascota", placeholder="e.g. Luna", key="new_pet_name")
-        new_species = st.selectbox("Species" if lang=="en" else "Especie", ["Dog", "Cat", "Other"] if lang=="en" else ["Perro", "Gato", "Otro"], key="new_pet_species")
-        new_breed = st.text_input("Breed / Cross" if lang=="en" else "Raza / Cruce", placeholder="e.g. Domestic / Siamese", key="new_pet_breed")
+        new_name = st.text_input("Pet Name" if lang=="en" else "Nombre de Mascota", placeholder="e.g. Luna", key="modal_new_name")
+        new_species = st.selectbox("Species" if lang=="en" else "Especie", ["Dog", "Cat", "Other"] if lang=="en" else ["Perro", "Gato", "Otro"], key="modal_new_species")
+        new_breed = st.text_input("Breed / Cross" if lang=="en" else "Raza / Cruce", placeholder="e.g. Domestic / Siamese", key="modal_new_breed")
     with f_c2:
-        new_age = st.number_input("Age (years)" if lang=="en" else "Edad (años)", 0, 30, 2, key="new_pet_age")
+        new_age = st.number_input("Age (years)" if lang=="en" else "Edad (años)", 0, 30, 2, key="modal_new_age")
         new_desc = st.text_input(
-            "Visual Description (Used by NVIDIA Vision to identify)" if lang=="en" else "Descripción Visual (Utilizada por NVIDIA Vision)",
-            placeholder="e.g. Striped tabby cat, white socks on paws",
-            key="new_pet_desc",
+            "Visual Description (For NVIDIA Vision)" if lang=="en" else "Descripción Visual (Para NVIDIA Vision)",
+            placeholder="e.g. Tabby cat, white socks on paws",
+            key="modal_new_desc",
         )
-        new_photo = st.file_uploader("Upload Pet Photo" if lang=="en" else "Subir Foto", type=["jpg", "jpeg", "png"], key="new_pet_photo")
+        new_photo = st.file_uploader("Upload Photo" if lang=="en" else "Subir Foto", type=["jpg", "jpeg", "png"], key="modal_new_photo")
 
-    save_btn_lbl = "💾 Save Pet to Roster" if lang == "en" else "💾 Guardar en Roster"
-    if st.button(save_btn_lbl, type="primary"):
+    if st.button("💾 " + ("Save Pet to Roster" if lang == "en" else "Guardar en Roster"), type="primary", width="stretch"):
         if new_name.strip():
             slug_id = new_name.lower().replace(" ", "_").strip()
             existing_ids = [p.pet_id for p in st.session_state.pets]
@@ -650,10 +625,78 @@ with st.expander(add_title, expanded=show_add_modal):
             )
             st.session_state.pets.append(new_profile)
             st.session_state.active_pet_id = slug_id
-            st.success(f"🐾 {new_name} registered successfully!")
             st.rerun()
         else:
-            st.error("Please enter a pet name.")
+            st.error("Please enter a pet name." if lang == "en" else "Por favor ingrese un nombre.")
+
+@st.dialog("✏️ " + ("Edit Pet Profile" if lang == "en" else "Editar Perfil"))
+def edit_pet_dialog():
+    e_name = st.text_input("Name" if lang=="en" else "Nombre", value=active_pet.name, key=f"dlg_edit_name_{active_pet.pet_id}")
+    sp_opts = ["Dog","Cat","Other"] if lang=="en" else ["Perro","Gato","Otro"]
+    idx = sp_opts.index(active_pet.species) if active_pet.species in sp_opts else 1
+    e_sp = st.selectbox("Species" if lang=="en" else "Especie", sp_opts, index=idx, key=f"dlg_edit_sp_{active_pet.pet_id}")
+    e_breed = st.text_input("Breed / Cross" if lang=="en" else "Raza", value=active_pet.breed or "", key=f"dlg_edit_br_{active_pet.pet_id}")
+    e_age = st.number_input("Age (years)" if lang=="en" else "Edad", 0, 30, active_pet.age_years, key=f"dlg_edit_age_{active_pet.pet_id}")
+    e_desc = st.text_input("Visual Description (Used by Vision Model)" if lang=="en" else "Descripción Visual", value=active_pet.description, key=f"dlg_edit_desc_{active_pet.pet_id}")
+    e_up = st.file_uploader("Update photo" if lang=="en" else "Actualizar Foto", type=["jpg","jpeg","png"], key=f"dlg_edit_photo_{active_pet.pet_id}")
+
+    c_s1, c_s2 = st.columns(2)
+    with c_s1:
+        if st.button("💾 " + ("Save Changes" if lang=="en" else "Guardar Cambios"), type="primary", width="stretch", key=f"dlg_save_{active_pet.pet_id}"):
+            active_pet.name = e_name
+            active_pet.species = "Dog" if e_sp in ("Dog","Perro") else ("Cat" if e_sp in ("Cat","Gato") else "Other")
+            active_pet.breed = e_breed or None
+            active_pet.age_years = int(e_age)
+            active_pet.description = e_desc
+            if e_up:
+                try:
+                    img = Image.open(e_up).convert("RGB")
+                    buf = io.BytesIO()
+                    img.save(buf, format="JPEG", quality=80)
+                    active_pet.photo_b64 = base64.b64encode(buf.getvalue()).decode()
+                except Exception:
+                    pass
+            st.rerun()
+    with c_s2:
+        if len(st.session_state.pets) > 1:
+            if st.button("🗑️ " + ("Remove" if lang=="en" else "Eliminar"), width="stretch", key=f"dlg_del_{active_pet.pet_id}"):
+                st.session_state.pets = [p for p in st.session_state.pets if p.pet_id != active_pet.pet_id]
+                st.session_state.active_pet_id = st.session_state.pets[0].pet_id
+                st.rerun()
+
+
+# ── 🐾 MULTI-PET ROSTER BAR (STREAMLIT NATIVE PILLS) ────────────────────────
+st.markdown("<div style='margin-bottom:6px;'></div>", unsafe_allow_html=True)
+roster_c1, roster_c2 = st.columns([4, 1.2], vertical_alignment="center")
+
+with roster_c1:
+    pet_id_list = [p.pet_id for p in st.session_state.pets]
+    if st.session_state.active_pet_id not in pet_id_list:
+        st.session_state.active_pet_id = pet_id_list[0]
+
+    def _pet_label_fmt(pid: str) -> str:
+        p_obj = next((p for p in st.session_state.pets if p.pet_id == pid), None)
+        if not p_obj:
+            return pid
+        ico = _ICONS.get(p_obj.species, "🐾")
+        return f"{ico} {p_obj.name}"
+
+    selected_pet = st.pills(
+        "Select Active Pet",
+        options=pet_id_list,
+        format_func=_pet_label_fmt,
+        default=st.session_state.active_pet_id,
+        key="pills_pet_selector",
+        label_visibility="collapsed",
+    )
+    if selected_pet and selected_pet != st.session_state.active_pet_id:
+        st.session_state.active_pet_id = selected_pet
+        st.rerun()
+
+with roster_c2:
+    add_lbl = "➕ Add Pet" if lang == "en" else "➕ Añadir Mascota"
+    if st.button(add_lbl, width="stretch"):
+        add_pet_dialog()
 
 # ── DATA FOR ACTIVE PET ───────────────────────────────────────────────────────
 events_all   = [e for e in st.session_state.generator.get_events() if e.pet_detected]
@@ -722,36 +765,8 @@ with pc:
         unsafe_allow_html=True,
     )
 
-    with st.expander(f"✏️ Edit {active_pet.name}'s Profile", expanded=False):
-        e_name = st.text_input("Name", value=active_pet.name, key=f"edit_name_{active_pet.pet_id}")
-        sp_opts = ["Dog","Cat","Other"] if lang=="en" else ["Perro","Gato","Otro"]
-        idx = sp_opts.index(active_pet.species) if active_pet.species in sp_opts else 1
-        e_sp = st.selectbox("Species", sp_opts, index=idx, key=f"edit_sp_{active_pet.pet_id}")
-        e_breed = st.text_input("Breed", value=active_pet.breed or "", key=f"edit_br_{active_pet.pet_id}")
-        e_age = st.number_input("Age (years)", 0, 30, active_pet.age_years, key=f"edit_age_{active_pet.pet_id}")
-        e_desc = st.text_input("Visual Description (Used by Vision Model)", value=active_pet.description, key=f"edit_desc_{active_pet.pet_id}")
-        e_up = st.file_uploader("Update photo", type=["jpg","jpeg","png"], key=f"edit_photo_{active_pet.pet_id}")
-
-        e_c1, e_c2 = st.columns(2)
-        with e_c1:
-            if st.button("Save Changes", key=f"save_edit_{active_pet.pet_id}"):
-                active_pet.name = e_name
-                active_pet.species = "Dog" if e_sp in ("Dog","Perro") else ("Cat" if e_sp in ("Cat","Gato") else "Other")
-                active_pet.breed = e_breed or None
-                active_pet.age_years = int(e_age)
-                active_pet.description = e_desc
-                if e_up:
-                    img = Image.open(e_up).convert("RGB")
-                    buf = io.BytesIO()
-                    img.save(buf, format="JPEG", quality=80)
-                    active_pet.photo_b64 = base64.b64encode(buf.getvalue()).decode()
-                st.rerun()
-        with e_c2:
-            if len(st.session_state.pets) > 1:
-                if st.button(f"🗑️ Remove {active_pet.name}", key=f"del_{active_pet.pet_id}"):
-                    st.session_state.pets = [p for p in st.session_state.pets if p.pet_id != active_pet.pet_id]
-                    st.session_state.active_pet_id = st.session_state.pets[0].pet_id
-                    st.rerun()
+    if st.button(f"✏️ " + (f"Edit {active_pet.name}'s Profile" if lang == "en" else f"Editar Perfil de {active_pet.name}"), width="stretch", key=f"btn_open_edit_{active_pet.pet_id}"):
+        edit_pet_dialog()
 
 with k1:
     ck = "kpi-green" if metrics.comfort_index >= 70 else "kpi-peach"
@@ -849,16 +864,16 @@ with tab_monitor:
         )
 
         if not sentry_active:
-            if st.button(t("sentry_start_btn", lang=lang), type="primary", use_container_width=True, key="btn_start_sentry"):
+            if st.button(t("sentry_start_btn", lang=lang), type="primary", width="stretch", key="btn_start_sentry"):
                 st.session_state.sentry_active = True
                 st.rerun()
 
             st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-            tpreview = st.button("👁️ Test / Refresh Camera Preview", use_container_width=True, key="btn_test_preview")
-            tburst  = st.button(f"⚡ {t('trigger_burst_btn', lang=lang)}", use_container_width=True, key="btn_manual_burst")
-            tsingle = st.button(f"📸 {t('trigger_single_btn', lang=lang)}", use_container_width=True, key="btn_manual_snap")
+            tpreview = st.button("👁️ Test / Refresh Camera Preview", width="stretch", key="btn_test_preview")
+            tburst  = st.button(f"⚡ {t('trigger_burst_btn', lang=lang)}", width="stretch", key="btn_manual_burst")
+            tsingle = st.button(f"📸 {t('trigger_single_btn', lang=lang)}", width="stretch", key="btn_manual_snap")
         else:
-            if st.button(t("sentry_stop_btn", lang=lang), type="primary", use_container_width=True, key="btn_stop_sentry"):
+            if st.button(t("sentry_stop_btn", lang=lang), type="primary", width="stretch", key="btn_stop_sentry"):
                 st.session_state.sentry_active = False
                 st.rerun()
             tpreview = False
@@ -931,7 +946,7 @@ with tab_monitor:
                                 unsafe_allow_html=True,
                             )
 
-                        pslot.image(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), use_container_width=True)
+                        pslot.image(cv2.cvtColor(annotated, cv2.COLOR_BGR2RGB), width="stretch")
                         time.sleep(0.02)
                 finally:
                     det.stop()
@@ -955,7 +970,7 @@ with tab_monitor:
                         cv2.imwrite(str(ROOT_DIR / "test_camera_0.jpg"), frame)
                         pslot.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
                                     caption=f"Camera {det.camera_source} · Live Preview (Brightness: {frame.mean():.1f})",
-                                    use_container_width=True)
+                                    width="stretch")
                         st.success(f"✅ Camera {det.camera_source} operational! Brightness: {frame.mean():.1f}/255")
                     else:
                         st.error("Cannot read frame from camera.")
@@ -976,7 +991,7 @@ with tab_monitor:
                         cv2.imwrite(str(ROOT_DIR / "current_live_cam0.jpg"), frame)
                         cv2.imwrite(str(ROOT_DIR / "test_camera_0.jpg"), frame)
                         pslot.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
-                                    caption=f"Camera · Live Frame", use_container_width=True)
+                                    caption=f"Camera · Live Frame", width="stretch")
                         if tburst:
                             with st.spinner(t("processing_burst", lang=lang)):
                                 burst = det.capture_micro_event_burst(frame, prefix="manual")
@@ -1007,7 +1022,7 @@ with tab_monitor:
             if not snap.exists():
                 snap = ROOT_DIR / "test_camera_0.jpg"
             if snap.exists():
-                pslot.image(str(snap), caption=f"Camera {current_source} · Standby Preview", use_container_width=True)
+                pslot.image(str(snap), caption=f"Camera {current_source} · Standby Preview", width="stretch")
             else:
                 pslot.markdown(
                     "<div class='cam-ph'><div style='font-size:2.2rem;'>📷</div>"
@@ -1033,7 +1048,7 @@ with tab_monitor:
             for bi, bp in enumerate(l_burst[:3]):
                 if Path(bp).exists():
                     with f_cols[bi]:
-                        st.image(bp, caption=_lbls[bi] if bi < 3 else f"Frame {bi+1}", use_container_width=True)
+                        st.image(bp, caption=_lbls[bi] if bi < 3 else f"Frame {bi+1}", width="stretch")
 
         with d_col2:
             st.markdown(
@@ -1056,7 +1071,7 @@ with tab_monitor:
             for ti, p in enumerate(st.session_state.pets):
                 with tag_cols[ti]:
                     p_ico = _ICONS.get(p.species, "🐾")
-                    if st.button(f"{p_ico} {p.name}", key=f"tag_btn_{p.pet_id}", use_container_width=True):
+                    if st.button(f"{p_ico} {p.name}", key=f"tag_btn_{p.pet_id}", width="stretch"):
                         # Assign last event to this pet
                         evs = st.session_state.generator.get_events()
                         if evs:
@@ -1085,7 +1100,7 @@ with tab_monitor:
         st.session_state.timeline_filter = "active" if cur_opt in f_mode else "all"
 
     with tf_c3:
-        if st.button(t("clear_history_btn", lang=lang), use_container_width=True):
+        if st.button(t("clear_history_btn", lang=lang), width="stretch"):
             target_del = active_pet.pet_id if st.session_state.timeline_filter == "active" else None
             st.session_state.generator.clear_events(pet_id=target_del)
             st.rerun()
@@ -1124,7 +1139,7 @@ with tab_monitor:
             ic, bc = st.columns([1, 3.5])
             with ic:
                 if peak:
-                    st.image(str(peak), use_container_width=True)
+                    st.image(str(peak), width="stretch")
                 else:
                     st.markdown(
                         f"<div style='background:#1E2840;min-height:110px;display:flex;"
@@ -1167,7 +1182,7 @@ with tab_monitor:
                             bc2 = st.columns(min(3, len(valid)))
                             for bi, bp in enumerate(valid[:3]):
                                 with bc2[bi]:
-                                    st.image(str(bp), caption=_bml[bi] if bi<3 else f"Frame {bi+1}", use_container_width=True)
+                                    st.image(str(bp), caption=_bml[bi] if bi<3 else f"Frame {bi+1}", width="stretch")
 
             if ia and ev.anomaly_reason:
                 st.markdown(f"<div class='alert-strip'>⚠️ <strong>{ev.anomaly_reason}</strong></div>", unsafe_allow_html=True)
@@ -1228,7 +1243,7 @@ with tab_digest:
                 margin=dict(l=20, r=20, t=30, b=10),
                 height=230,
             )
-            st.plotly_chart(fig_g, use_container_width=True)
+            st.plotly_chart(fig_g, width="stretch")
 
         with rc:
             _rl = [
@@ -1265,7 +1280,7 @@ with tab_digest:
                 margin=dict(l=10, r=10, t=20, b=10),
                 height=230,
             )
-            st.plotly_chart(fig_r, use_container_width=True)
+            st.plotly_chart(fig_r, width="stretch")
 
         # ── 24-HOUR CIRCADIAN ACTIVITY DISTRIBUTION ───────────────────────────
         hours = list(range(24))
@@ -1323,7 +1338,7 @@ with tab_digest:
             margin=dict(l=20, r=20, t=40, b=20),
             height=230,
         )
-        st.plotly_chart(fig_chrono, use_container_width=True)
+        st.plotly_chart(fig_chrono, width="stretch")
 
     except ImportError:
         st.info("pip install plotly")
@@ -1416,7 +1431,7 @@ with tab_digest:
 
     c_btn1, c_btn2 = st.columns([3, 1])
     with c_btn1:
-        if st.button(f"✨ {t('generate_digest_btn', lang=lang)} ({active_pet.name})", type="primary", use_container_width=True):
+        if st.button(f"✨ {t('generate_digest_btn', lang=lang)} ({active_pet.name})", type="primary", width="stretch"):
             with st.spinner(t("generating_digest", lang=lang)):
                 st.session_state[report_key] = st.session_state.generator.generate_daily_report(
                     pet_name=active_pet.name,
@@ -1469,36 +1484,44 @@ with tab_digest:
 with tab_chat:
     st.markdown(
         f"<div class='chat-intro'>"
-        f"<div class='chat-title'>💬 {t('chat_header',lang=lang,pet_name=active_pet.name)}</div>"
+        f"<div class='chat-title'>💬 {t('chat_header', lang=lang, pet_name=active_pet.name)}</div>"
         f"<div class='chat-sub'>{t('chat_caption', lang=lang)}</div></div>",
-        unsafe_allow_html=True)
-    st.markdown("<div class='qlbl'>Quick Questions</div>", unsafe_allow_html=True)
+        unsafe_allow_html=True,
+    )
+
     chips = [
         t("prompt_chip_1", lang=lang),
         t("prompt_chip_2", lang=lang),
         t("prompt_chip_3", lang=lang),
     ]
-    cc2 = st.columns(3)
-    for i,chip in enumerate(chips):
-        with cc2[i]:
-            if st.button(chip, key=f"chip_{i}", use_container_width=True):
-                st.session_state.chip_query = chip
-    st.markdown("<div style='height:8px;'></div>", unsafe_allow_html=True)
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]): st.markdown(msg["content"])
+    st.markdown("<div style='font-size:0.75rem;font-weight:700;color:#F59E0B;text-transform:uppercase;letter-spacing:0.08em;margin:10px 0 6px;'>💡 Quick Questions:</div>", unsafe_allow_html=True)
+    clicked_chip = st.pills("Quick Questions", chips, key=f"quick_chat_pills_{active_pet.pet_id}", label_visibility="collapsed")
+
+    # Contenedor dedicado para mensajes (evita que los nuevos queden debajo del input)
+    msg_container = st.container()
+    with msg_container:
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
+
     uq: str = st.chat_input(t("chat_input_placeholder", lang=lang), key="chat_user_input")
-    resolved = uq or (st.session_state.chip_query if st.session_state.chip_query else "")
-    if st.session_state.chip_query: st.session_state.chip_query = ""
-    if resolved:
-        st.session_state.chat_history.append({"role":"user","content":resolved})
-        with st.chat_message("user"): st.markdown(resolved)
-        with st.chat_message("assistant"):
-            with st.spinner(t("chat_analyzing", lang=lang)):
-                reply = st.session_state.generator.chat_with_agent(
-                    resolved,
-                    pet_name=active_pet.name,
-                    pet_id=active_pet.pet_id,
-                    lang=lang,
-                )
-                st.markdown(reply)
-                st.session_state.chat_history.append({"role":"assistant","content":reply})
+
+    resolved_query = uq or (clicked_chip if clicked_chip else "")
+
+    if resolved_query:
+        st.session_state.chat_history.append({"role": "user", "content": resolved_query})
+        with msg_container:
+            with st.chat_message("user"):
+                st.markdown(resolved_query)
+            with st.chat_message("assistant"):
+                with st.spinner(t("chat_analyzing", lang=lang)):
+                    reply = st.session_state.generator.chat_with_agent(
+                        resolved_query,
+                        pet_name=active_pet.name,
+                        pet_id=active_pet.pet_id,
+                        lang=lang,
+                        conversation_history=st.session_state.chat_history[:-1],
+                    )
+                    st.markdown(reply)
+                    st.session_state.chat_history.append({"role": "assistant", "content": reply})
+        st.rerun()

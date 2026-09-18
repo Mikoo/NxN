@@ -225,19 +225,31 @@ class ReportGenerator:
             location_hint=loc_hint,
         )
 
-    def compute_habit_metrics(self, pet_id: Optional[str] = None) -> HabitMatrixMetrics:
+    def compute_habit_metrics(self, pet_id: Optional[str] = None, target_date: Optional[str] = None) -> HabitMatrixMetrics:
         """
         Calcula las metricas objetivas de la matriz de habitos a partir de eventos y bouts conductuales reales.
-        Descarta frames ambientales y no distorsiona las estadisticas por ráfagas consecutivas.
+        Filtra por fecha (hoy por defecto) y proyecta un presupuesto circadiano diario continuo.
         """
-        target_events = [e for e in self._events if e.pet_detected and (e.pet_id == pet_id if pet_id else True)]
+        date_str = target_date or datetime.now().strftime("%Y-%m-%d")
+        target_events = [
+            e for e in self._events
+            if e.pet_detected
+            and (e.pet_id == pet_id if pet_id else True)
+            and e.timestamp.strftime("%Y-%m-%d") == date_str
+        ]
+        # Fallback a todos los eventos confirmados de la mascota si no hay en la fecha exacta
+        if not target_events:
+            target_events = [e for e in self._events if e.pet_detected and (e.pet_id == pet_id if pet_id else True)]
         if not target_events:
             return HabitMatrixMetrics()
 
         bouts = self.get_behavioral_bouts(pet_id=pet_id)
+        # Filtrar bouts del dia si existen
+        day_bouts = [b for b in bouts if b.start_time.strftime("%Y-%m-%d") == date_str]
+        active_bouts_list = day_bouts if len(day_bouts) >= 2 else bouts
 
-        water_visits = sum(1 for b in bouts if b.activity == PetActivityType.DRINKING)
-        food_visits = sum(1 for b in bouts if b.activity == PetActivityType.EATING)
+        water_visits = sum(1 for b in active_bouts_list if b.activity == PetActivityType.DRINKING)
+        food_visits = sum(1 for b in active_bouts_list if b.activity == PetActivityType.EATING)
         
         # En caso de eventos individuales que no cerraron bout
         if water_visits == 0:
@@ -245,22 +257,22 @@ class ReportGenerator:
         if food_visits == 0:
             food_visits = sum(1 for e in target_events if e.activity == PetActivityType.EATING)
 
-        rest_minutes = sum(b.duration_minutes for b in bouts if b.activity in (PetActivityType.SLEEPING, PetActivityType.RESTING))
-        active_minutes = sum(b.duration_minutes for b in bouts if b.activity in (PetActivityType.PLAYING, PetActivityType.WALKING))
+        rest_bouts = [b for b in active_bouts_list if b.activity in (PetActivityType.SLEEPING, PetActivityType.RESTING)]
+        active_bouts = [
+            b for b in active_bouts_list
+            if b.activity in (PetActivityType.PLAYING, PetActivityType.WALKING, PetActivityType.SCRATCHING, PetActivityType.PACING)
+        ]
 
-        obs_start = min(e.timestamp for e in target_events)
-        obs_end = max(e.timestamp for e in target_events)
-        elapsed_hours = max(0.5, (obs_end - obs_start).total_seconds() / 3600.0)
+        rest_minutes = sum(b.duration_minutes for b in rest_bouts)
+        active_minutes = sum(b.duration_minutes for b in active_bouts)
 
-        # Proyeccion de horas a escala diaria (24h)
-        if elapsed_hours >= 12.0:
-            sleep_hours = round(min(22.0, max(2.0, rest_minutes / 60.0)), 1)
-            active_hours = round(min(10.0, max(0.5, active_minutes / 60.0)), 1)
-        else:
-            # Proyeccion proporcional con referencia etologica felina/canina saludable
-            rest_ratio = rest_minutes / max(1.0, (rest_minutes + active_minutes))
-            sleep_hours = round(min(20.0, max(8.0, 14.0 * rest_ratio + (rest_minutes / 60.0))), 1)
-            active_hours = round(min(6.0, max(1.0, 3.0 * (1.0 - rest_ratio) + (active_minutes / 60.0))), 1)
+        # Proyeccion circadiana continua (sin corte brusco a las 12h)
+        total_recorded_min = max(1.0, rest_minutes + active_minutes)
+        active_ratio = active_minutes / total_recorded_min
+
+        # Presupuesto circadiano felino/canino saludable (1.0h - 4.5h activo, 10.0h - 16.5h reposo)
+        active_hours = round(min(5.0, max(1.0, 1.0 + (active_ratio * 3.5) + (len(active_bouts) * 0.15))), 1)
+        sleep_hours = round(min(18.0, max(8.0, 16.0 - (active_hours * 1.1))), 1)
 
         variance = round(((active_hours - self.baseline_activity) / self.baseline_activity) * 100.0, 1)
 
@@ -282,7 +294,7 @@ class ReportGenerator:
             nutrition_score = 80.0
 
         # Movilidad basada en bouts activos
-        walking_bouts = len([b for b in bouts if b.activity in (PetActivityType.WALKING, PetActivityType.PLAYING)])
+        walking_bouts = len(active_bouts)
         mobility_score = min(100.0, max(60.0, 80.0 + walking_bouts * 3.0))
 
         # Penalizaciones por anomalias clinicas verificadas
@@ -302,9 +314,9 @@ class ReportGenerator:
             active_hours_estimated=active_hours,
             comfort_index=comfort_index,
             activity_variance_vs_baseline=variance,
-            total_bouts_count=len(bouts),
-            rest_bouts_count=sum(1 for b in bouts if b.activity in (PetActivityType.SLEEPING, PetActivityType.RESTING)),
-            active_bouts_count=sum(1 for b in bouts if b.activity in (PetActivityType.PLAYING, PetActivityType.WALKING)),
+            total_bouts_count=len(active_bouts_list),
+            rest_bouts_count=len(rest_bouts),
+            active_bouts_count=len(active_bouts),
             hydration_score=round(hydration_score, 1),
             nutrition_score=round(nutrition_score, 1),
             mobility_score=round(mobility_score, 1),
@@ -366,65 +378,129 @@ class ReportGenerator:
         pet_name: str = "Toby",
         pet_id: Optional[str] = None,
         lang: str = "en",
+        conversation_history: Optional[List[Dict[str, str]]] = None,
     ) -> str:
         """
         Permite al tutor dialogar con el asistente Nemotron sobre el estado de su mascota,
-        proporcionando en el contexto la bitacora especifica en el idioma solicitado.
+        proporcionando memoria multi-turno, extraccion de CoT, timeout seguro y fallback.
         """
-        target_events = [e for e in self._events if e.pet_id == pet_id] if pet_id else self._events
+        import re
+
+        # Clinical Safety Rail: Bloquear fármacos tóxicos humanos inmediatamente
+        toxic_drugs = ["paracetamol", "acetaminophen", "ibuprofen", "ibuprofeno", "aspirin", "aspirina", "tylenol", "advil"]
+        user_msg_low = user_message.lower()
+        if any(d in user_msg_low for d in toxic_drugs):
+            if lang == "en":
+                return (
+                    "⚠️ **CLINICAL SAFETY ALERT (NeMo Guardrail):**\n\n"
+                    "**NEVER administer human pain medications (such as acetaminophen, ibuprofen, or aspirin) to household pets.**\n\n"
+                    "These compounds are severely toxic to cats and dogs, causing fatal methemoglobinemia, acute liver failure, or renal necrosis even in minute doses. "
+                    "If your pet is in pain or accidentally ingested human medication, please contact your nearest veterinary emergency hospital immediately."
+                )
+            else:
+                return (
+                    "⚠️ **ALERTA DE SEGURIDAD CLÍNICA (NeMo Guardrail):**\n\n"
+                    "**NUNCA administres medicamentos analgésicos humanos (como paracetamol, ibuprofeno o aspirina) a tus mascotas.**\n\n"
+                    "Estos compuestos son altamente tóxicos para gatos y perros, causando metahemoglobinemia mortal, fallo hepático agudo o necrosis renal incluso en microdosis. "
+                    "Si tu mascota manifiesta dolor o sospechas de ingestión accidental, comunícate de urgencia con un hospital veterinario de guardia."
+                )
+
+        target_events = [e for e in self._events if e.pet_detected and (e.pet_id == pet_id if pet_id else True)]
         if self.nebius.mock or self.nebius._client is None:
             if lang == "en":
                 return (
                     f"[Mock Mode] Hello! I am the PawSentry AI Assistant. Today {pet_name} has logged "
-                    f"{len(target_events)} micro-events. Their comfort index is currently healthy, "
+                    f"{len(target_events)} verified micro-events. Their comfort index is currently healthy, "
                     f"with consistent hydration and rest routines."
                 )
             else:
                 return (
                     f"[Modo Mock] Hola, soy el Asistente de PawSentry AI. Hoy {pet_name} ha registrado "
-                    f"{len(target_events)} micro-eventos. Su confort se encuentra en niveles saludables "
+                    f"{len(target_events)} micro-eventos verificados. Su confort se encuentra en niveles saludables "
                     f"y ha cumplido sus visitas habituales al comedero y bebedero."
                 )
 
         try:
             metrics = self.compute_habit_metrics(pet_id=pet_id)
+            recent_activities = [e.activity.value for e in target_events[-8:]] if target_events else ["resting"]
             context_summary = (
                 f"Pet Name: {pet_name} (ID: {pet_id or 'default'})\n"
-                f"Events recorded today for this pet: {len(target_events)}\n"
-                f"Habit metrics: {metrics.model_dump_json()}\n"
-                f"Last 5 activities: {[e.activity.value for e in target_events[-5:]]}\n"
+                f"Verified events recorded today: {len(target_events)}\n"
+                f"Comfort Index: {metrics.comfort_index:.0f}/100\n"
+                f"Active Hours (projected): {metrics.active_hours_estimated}h ({metrics.active_bouts_count} active bouts)\n"
+                f"Sleep Hours (projected): {metrics.sleep_hours_estimated}h ({metrics.rest_bouts_count} rest bouts)\n"
+                f"Water visits: {metrics.water_visits_count} | Food visits: {metrics.food_visits_count}\n"
+                f"Recent behavioral sequence: {', '.join(recent_activities)}\n"
             )
 
             if lang == "en":
                 system_prompt = (
-                    "You are PawSentry AI Assistant, an animal ethologist and veterinary wellness AI "
-                    "powered by NVIDIA Nemotron. Respond in an empathetic, warm, yet medically precise tone in English. "
-                    f"Use this companion context:\n{context_summary}"
+                    "You are PawSentry AI Assistant, an expert animal ethologist and veterinary wellness companion "
+                    "powered by NVIDIA Nemotron. Respond in an empathetic, warm, concise, and medically precise tone in English. "
+                    "Directly answer the owner's query using the companion context below. Do not output raw internal reasoning tokens.\n\n"
+                    f"Companion Context:\n{context_summary}"
                 )
             else:
                 system_prompt = (
-                    "Eres PawSentry AI Assistant, un etologo y asistente de bienestar animal "
-                    "impulsado por NVIDIA Nemotron. Responde en tono empatico, afectuoso pero preciso y riguroso en espanol. "
-                    f"Usa este contexto de la mascota:\n{context_summary}"
+                    "Eres PawSentry AI Assistant, un experto etólogo veterinario y asesor de bienestar animal "
+                    "impulsado por NVIDIA Nemotron. Responde en tono empático, afectuoso, conciso y médicamente riguroso en español. "
+                    "Responde directamente la duda del tutor basándote en el contexto de la mascota. No muestres razonamiento interno crudo.\n\n"
+                    f"Contexto de la Mascota:\n{context_summary}"
                 )
 
-            response = self.nebius._client.chat.completions.create(
-                model=self.nebius.reasoning_model,
-                messages=[
-                    {
-                        "role": "system",
-                        "content": system_prompt,
-                    },
-                    {"role": "user", "content": user_message},
-                ],
-                max_tokens=400,
-                temperature=0.4,
-            )
-            return response.choices[0].message.content or "No response could be generated."
+            messages: List[Dict[str, str]] = [{"role": "system", "content": system_prompt}]
+            
+            # Incorporar memoria de dialogo multi-turno
+            if conversation_history:
+                for turn in conversation_history[-6:]:
+                    if turn.get("role") in ("user", "assistant") and turn.get("content"):
+                        messages.append({"role": turn["role"], "content": turn["content"]})
+            messages.append({"role": "user", "content": user_message})
+
+            # Intentar primero con el modelo principal; si tarda > 18s, conmutar a Nemotron-3_5-Lightning
+            response = None
+            models_to_try = [self.nebius.reasoning_model, "nvidia/Nemotron-3_5-Lightning"]
+            for m in models_to_try:
+                try:
+                    response = self.nebius._client.chat.completions.create(
+                        model=m,
+                        messages=messages,
+                        max_tokens=1000,
+                        temperature=0.3,
+                        timeout=18.0,
+                    )
+                    if response and response.choices and response.choices[0].message:
+                        break
+                except Exception as model_err:
+                    logger.warning("Fallo o timeout en modelo %s: %s. Probando siguiente...", m, model_err)
+
+            if not response or not response.choices:
+                raise RuntimeError("No se obtuvo respuesta valida de ningun modelo Nemotron")
+
+            msg = response.choices[0].message
+            raw_content = msg.content or getattr(msg, "reasoning_content", None) or ""
+
+            # Limpiar etiquetas <think>...</think> si estuvieran presentes
+            cleaned = re.sub(r"<think>.*?</think>", "", raw_content, flags=re.DOTALL).strip()
+            if not cleaned:
+                cleaned = raw_content.strip()
+
+            return cleaned if cleaned else ("Response received, but content was empty." if lang == "en" else "Respuesta recibida sin contenido.")
+
         except Exception as err:
-            logger.error("Error en chat asistencial: %s", err)
-            err_msg = "An error occurred while consulting Nemotron" if lang == "en" else "Ocurrió una incidencia al consultar a Nemotron"
-            return f"{err_msg}: {err}"
+            logger.error("Error en chat asistencial Nemotron: %s", err)
+            if lang == "en":
+                return (
+                    f"🐾 **PawSentry Nemotron Assistant:** Today {pet_name} is in a calm state with a Comfort Index of "
+                    f"**{metrics.comfort_index:.0f}/100**, {metrics.water_visits_count} hydration visits, and "
+                    f"{metrics.rest_bouts_count} resting bouts. *(Cloud inference fallback due to: {err})*"
+                )
+            else:
+                return (
+                    f"🐾 **Asistente Nemotron PawSentry:** Hoy {pet_name} se encuentra estable con un Índice de Confort de "
+                    f"**{metrics.comfort_index:.0f}/100**, {metrics.water_visits_count} visitas de hidratación y "
+                    f"{metrics.rest_bouts_count} sesiones de descanso. *(Fallback local por: {err})*"
+                )
 
 
 if __name__ == "__main__":
