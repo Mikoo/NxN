@@ -102,6 +102,7 @@ Natively supports:
 ## 📂 Repository Structure
 
 ```text
+├── .env.example               # Template for environment variables (copy to .env)
 ├── app.py                     # Presentation Layer (Streamlit reactive bilingual dashboard)
 ├── requirements.txt           # Python dependencies (OpenCV, Plotly, OpenAI, Tavily, Pydantic)
 ├── PROJECT_RULES.md           # Core architectural guidelines and constraints
@@ -127,18 +128,18 @@ Natively supports:
 ### 1. Prerequisites
 - Python 3.11, 3.12, or 3.13
 - A functional USB webcam or RTSP network camera (e.g. EZVIZ H8c Pro)
-- A [Nebius Token Factory](https://studio.nebius.ai/) API key
-- A [Tavily Search](https://tavily.com/) API key
+- A [Nebius Token Factory](https://studio.nebius.ai/) API key *(Optional — built-in offline simulation mode available)*
+- A [Tavily Search](https://tavily.com/) API key *(Optional — vetted clinical mock mode available)*
 
 ### 2. Installation
 ```bash
 # Clone the repository
-git clone https://github.com/your-repo/pawsentry-ai.git
-cd pawsentry-ai
+git clone https://github.com/Mikoo/NxN.git
+cd NxN
 
 # Create virtual environment
 python -m venv .venv
-source .venv/bin/activate       # On Linux / macOS
+source .venv/bin/activate            # On Linux / macOS
 # or: .\.venv\Scripts\Activate.ps1   # On Windows
 
 # Install dependencies
@@ -146,7 +147,13 @@ pip install -r requirements.txt
 ```
 
 ### 3. Environment Configuration
-Create a `.env` file in the root directory:
+Copy the sample environment template:
+```bash
+cp .env.example .env                 # On Linux / macOS
+# or: copy .env.example .env         # On Windows
+```
+
+Configure your credentials inside `.env` *(if omitted, the system seamlessly runs in local simulation mode)*:
 ```env
 NEBIUS_API_KEY=your_nebius_api_key_here
 NEBIUS_BASE_URL=https://api.studio.nebius.ai/v1
