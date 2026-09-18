@@ -93,9 +93,9 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "sentry_status_cooldown": "Sensor cooling down ({sec:.1f}s remaining)...",
         "cam_source_label": "Camera Source Mode",
         "cam_source_usb": "💻 Local USB Webcam",
-        "cam_source_rtsp": "🌐 IP Camera (EZVIZ H8c Pro RTSP)",
-        "rtsp_url_label": "RTSP Stream URL (EZVIZ H8c Pro)",
-        "rtsp_helper": "Format: rtsp://admin:{verification_code}@{camera_ip}:554/H.264/ch1/main",
+        "cam_source_rtsp": "🌐 IP Camera (SriHome / EZVIZ RTSP)",
+        "rtsp_url_label": "RTSP Stream URL (SriHome / EZVIZ / IP Cam)",
+        "rtsp_helper": "e.g. rtsp://admin:888888@192.168.1.60:8554/profile0",
         "tag_as_btn": "👉 Tag as {pet_name}",
         "tag_success": "Saved! Assigned to {pet_name} and updated profile notes."
     },
@@ -184,9 +184,9 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "sentry_status_cooldown": "Sensor en cooldown ({sec:.1f}s restantes)...",
         "cam_source_label": "Fuente de Cámara",
         "cam_source_usb": "💻 Cámara Web USB Local",
-        "cam_source_rtsp": "🌐 Cámara IP (EZVIZ H8c Pro RTSP)",
-        "rtsp_url_label": "URL del Stream RTSP (EZVIZ H8c Pro)",
-        "rtsp_helper": "Formato: rtsp://admin:{código_verificación}@{ip_camara}:554/H.264/ch1/main",
+        "cam_source_rtsp": "🌐 Cámara IP (SriHome / EZVIZ RTSP)",
+        "rtsp_url_label": "URL del Stream RTSP (SriHome / EZVIZ / Cam IP)",
+        "rtsp_helper": "Ej: rtsp://admin:888888@192.168.1.60:8554/profile0",
         "tag_as_btn": "👉 Etiquetar como {pet_name}",
         "tag_success": "¡Guardado! Asignado a {pet_name} y notas de perfil actualizadas."
     }

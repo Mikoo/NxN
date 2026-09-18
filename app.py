@@ -1,4 +1,4 @@
-﻿"""
+"""
 app.py — PawSentry AI · Autonomous Multi-Pet Edge Sentinel
 Presentation layer only. Business and AI logic lives in core/.
 Full bilingual support (English default for hackathon judges, Spanish switch).
@@ -342,8 +342,8 @@ if "camera_index" not in st.session_state or st.session_state.camera_index != 0:
 if st.session_state.get("cam_index_select") == 1:
     st.session_state.cam_index_select = 0
     st.session_state.camera_index = 0
-if "rtsp_url" not in st.session_state:
-    st.session_state.rtsp_url = "rtsp://admin:VERIFICATION_CODE@192.168.1.100:554/H.264/ch1/main"
+if "rtsp_url" not in st.session_state or not st.session_state.rtsp_url or "VERIFICATION_CODE" in st.session_state.rtsp_url:
+    st.session_state.rtsp_url = "rtsp://admin:888888@192.168.1.60:8554/profile0"
 if "min_motion_area" not in st.session_state:
     st.session_state.min_motion_area = 3500
 if "cooldown" not in st.session_state:
@@ -530,23 +530,37 @@ with st.expander(f"⚙️  {t('hardware_title', lang=lang)} & Settings", expande
                 key="cam_index_select",
             )
         else:
+            preset_c1, preset_c2 = st.columns(2)
+            if preset_c1.button("📹 Cargar SriHome (192.168.1.60)", key="btn_preset_srihome", width="stretch", help="Cargar stream verificado de tu cámara SriHome"):
+                st.session_state.rtsp_url = "rtsp://admin:888888@192.168.1.60:8554/profile0"
+                st.rerun()
+            if preset_c2.button("📹 Cargar EZVIZ H8c Pro", key="btn_preset_ezviz", width="stretch", help="Cargar plantilla para EZVIZ"):
+                st.session_state.rtsp_url = "rtsp://admin:VERIFICATION_CODE@192.168.1.55:554/H.264/ch1/main"
+                st.rerun()
+
             st.session_state.rtsp_url = st.text_input(
                 t("rtsp_url_label", lang=lang),
                 value=st.session_state.rtsp_url,
                 help=t("rtsp_helper", lang=lang),
             )
 
-        with st.expander("📖 EZVIZ H8c Pro RTSP Setup Guide", expanded=False):
-            st.markdown(
-                """
-                **How to connect your EZVIZ H8c Pro:**
-                1. **Disable Encryption**: In the EZVIZ mobile app -> Camera Settings -> turn OFF *Video Encryption*.
-                2. **Verification Code**: Locate the 6-letter uppercase code printed on the camera sticker (e.g. `ABCDEF`).
-                3. **Camera Local IP**: Find the IP address in your Wi-Fi router or EZVIZ app (e.g. `192.168.1.55`).
-                4. **RTSP Stream URL**:
-                   `rtsp://admin:VERIFICATION_CODE@CAMERA_IP:554/H.264/ch1/main`
-                """
-            )
+            with st.expander("📖 Guías de Conexión RTSP (SriHome & EZVIZ)", expanded=False):
+                st.markdown(
+                    """
+                    **📹 Cámara SriHome (Detectada y Verificada en tu red local):**
+                    - **IP local**: `192.168.1.60` (red Wi-Fi `Mik00`)
+                    - **Puerto RTSP**: `8554` *(SriHome utiliza el puerto 8554 en lugar del 554 estándar)*
+                    - **Stream**: `/profile0` (Resolución 2K QHD 2304x1296) o `/profile1` (substream)
+                    - **Credenciales por defecto**: `admin:888888` (o tu contraseña de dispositivo si la cambiaste en la app)
+                    - **URL Verificada**: `rtsp://admin:888888@192.168.1.60:8554/profile0`
+                    
+                    ---
+                    **📹 Cámara EZVIZ H8c Pro:**
+                    1. **Desactivar Encriptación**: En la app EZVIZ -> Ajustes de cámara -> Desactivar *Encriptación de video*.
+                    2. **Código de Verificación**: Código de 6 letras mayúsculas en la etiqueta de la cámara.
+                    3. **URL**: `rtsp://admin:VERIFICACION@IP_CAMARA:554/H.264/ch1/main`
+                    """
+                )
 
     with s3:
         st.markdown(f"**⏱️ Cooldown & Sensitivity**")
