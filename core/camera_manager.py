@@ -236,6 +236,67 @@ def probe_camera_connection(profile: CameraProfile, timeout_seconds: float = 4.0
                 pass
 
 
+def probe_camera_status(profile: CameraProfile, fast_timeout: float = 1.0) -> str:
+    """
+    Determina rápidamente el estado de la cámara en 3 estados:
+      - 'disabled' (⚪): si profile.enabled es False
+      - 'active'   (🟢): si profile.enabled es True y la cámara responde a la red/USB
+      - 'inactive' (🔴): si profile.enabled es True pero no responde (offline / desconectada)
+    """
+    if not profile.enabled:
+        return "disabled"
+
+    if profile.protocol in (CameraProtocol.RTSP, CameraProtocol.HTTP) and profile.ip_address:
+        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        s.settimeout(fast_timeout)
+        try:
+            res = s.connect_ex((profile.ip_address, profile.port))
+            s.close()
+            return "active" if res == 0 else "inactive"
+        except Exception:
+            return "inactive"
+    elif profile.protocol == CameraProtocol.USB:
+        try:
+            backend = cv2.CAP_DSHOW if sys.platform == "win32" else 0
+            cap = cv2.VideoCapture(int(profile.usb_index), backend)
+            if cap and cap.isOpened():
+                cap.release()
+                return "active"
+            return "inactive"
+        except Exception:
+            return "inactive"
+
+    return "active"
+
+
+def probe_fleet_statuses(cameras: List[CameraProfile], fast_timeout: float = 1.0) -> Dict[str, str]:
+    """
+    Sondea en paralelo todas las cámaras configuradas usando ThreadPoolExecutor.
+    Retorna un diccionario {camera_id: "active" | "disabled" | "inactive"}.
+    """
+    statuses: Dict[str, str] = {}
+    to_probe = []
+    for c in cameras:
+        if not c.enabled:
+            statuses[c.camera_id] = "disabled"
+        else:
+            to_probe.append(c)
+
+    if not to_probe:
+        return statuses
+
+    with ThreadPoolExecutor(max_workers=min(6, len(to_probe))) as executor:
+        future_map = {executor.submit(probe_camera_status, c, fast_timeout): c.camera_id for c in to_probe}
+        for fut in as_completed(future_map):
+            cid = future_map[fut]
+            try:
+                statuses[cid] = fut.result()
+            except Exception:
+                statuses[cid] = "inactive"
+
+    return statuses
+
+
 def scan_local_lan_cameras(
     subnet_prefix: str = "192.168.1",
     ports: Tuple[int, ...] = (554, 8554),

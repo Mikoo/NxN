@@ -119,6 +119,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "zone_filter_label": "Zone Filter",
         "all_zones": "All Household Zones",
         "spatial_activity_title": "Spatial Behavior & Room Distribution",
+        "cam_state_active": "Active",
+        "cam_state_disabled": "Disabled",
+        "cam_state_inactive": "Inactive (Offline)",
+        "probe_network_btn": "🔄 Probe Camera Fleet",
+        "probing_network": "Probing camera network...",
+        "select_view_btn": "👁️ Set Active View",
+        "primary_view_badge": "PRIMARY VIEW",
     },
     "es": {
         "app_title": "PawSentry AI",
@@ -231,6 +238,13 @@ TRANSLATIONS: Dict[str, Dict[str, str]] = {
         "zone_filter_label": "Filtrar por Habitación / Zona",
         "all_zones": "Todas las Habitaciones",
         "spatial_activity_title": "Distribución Espacial y Ocupación por Habitación",
+        "cam_state_active": "Activa",
+        "cam_state_disabled": "Desactivada",
+        "cam_state_inactive": "Inactiva (Desconectada)",
+        "probe_network_btn": "🔄 Sondear Red de Cámaras",
+        "probing_network": "Sondeando la red de cámaras...",
+        "select_view_btn": "👁️ Ver en Pantalla",
+        "primary_view_badge": "VISTA PRINCIPAL",
     }
 }
 

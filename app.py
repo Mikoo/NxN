@@ -22,6 +22,8 @@ from core.camera_manager import (
     get_camera_by_id,
     load_cameras,
     probe_camera_connection,
+    probe_camera_status,
+    probe_fleet_statuses,
     save_cameras,
 )
 from core.detector import PetMotionDetector
@@ -96,6 +98,100 @@ div[data-testid="stExpander"] {
 }
 div[data-testid="stExpander"] summary {
   font-size: 0.82rem !important; color: #7A8BAD !important; font-weight: 600 !important;
+}
+
+/* ── Android Quick Settings Tiles ─────────────────────────────── */
+.android-tile {
+  border-radius: 18px;
+  padding: 16px;
+  background: #151928;
+  border: 1.5px solid rgba(255,255,255,0.08);
+  position: relative;
+  overflow: hidden;
+  margin-bottom: 6px;
+  min-height: 140px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+.android-tile-active {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.14) 0%, rgba(15, 23, 42, 0.88) 100%);
+  border: 1.5px solid rgba(52, 211, 153, 0.50);
+  box-shadow: 0 4px 18px rgba(16, 185, 129, 0.10);
+}
+.android-tile-disabled {
+  background: #131722;
+  border: 1.5px solid rgba(255, 255, 255, 0.06);
+  opacity: 0.70;
+}
+.android-tile-inactive {
+  background: linear-gradient(135deg, rgba(239, 68, 68, 0.14) 0%, rgba(15, 23, 42, 0.88) 100%);
+  border: 1.5px solid rgba(239, 68, 68, 0.50);
+  box-shadow: 0 4px 18px rgba(239, 68, 68, 0.10);
+}
+.android-tile-primary {
+  outline: 2px solid #F59E0B;
+  outline-offset: 2px;
+}
+.tile-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+}
+.tile-icon-bubble {
+  width: 38px;
+  height: 38px;
+  border-radius: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.2rem;
+}
+.bubble-active { background: rgba(52, 211, 153, 0.20); border: 1px solid rgba(52, 211, 153, 0.35); }
+.bubble-disabled { background: rgba(255, 255, 255, 0.06); border: 1px solid rgba(255, 255, 255, 0.10); }
+.bubble-inactive { background: rgba(239, 68, 68, 0.20); border: 1px solid rgba(239, 68, 68, 0.35); }
+
+.tile-badge {
+  font-size: 0.65rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  padding: 3px 9px;
+  border-radius: 999px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.badge-active { background: rgba(52, 211, 153, 0.18); color: #34D399; border: 1px solid rgba(52, 211, 153, 0.35); }
+.badge-disabled { background: rgba(255, 255, 255, 0.08); color: #94A3B8; border: 1px solid rgba(255, 255, 255, 0.12); }
+.badge-inactive { background: rgba(239, 68, 68, 0.18); color: #FCA5A5; border: 1px solid rgba(239, 68, 68, 0.35); }
+
+.tile-name {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #EFF2F8;
+  line-height: 1.25;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.tile-zone {
+  font-size: 0.73rem;
+  color: #94A3B8;
+  margin-top: 3px;
+}
+.tile-endpoint {
+  font-size: 0.66rem;
+  font-family: monospace;
+  color: #64748B;
+  margin-top: 5px;
+  background: rgba(0,0,0,0.30);
+  padding: 3px 7px;
+  border-radius: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Profile card ─────────────────────────────────────────────── */
@@ -352,6 +448,11 @@ if "active_camera_id" not in st.session_state:
         st.session_state.cameras[0].camera_id if st.session_state.cameras else "srihome_living"
     )
 
+if "camera_statuses" not in st.session_state:
+    st.session_state.camera_statuses = {
+        c.camera_id: ("active" if c.enabled else "disabled") for c in st.session_state.cameras
+    }
+
 if "sentry_patrol_mode" not in st.session_state:
     st.session_state.sentry_patrol_mode = "focus"
 
@@ -518,9 +619,10 @@ with nav_r:
 
 # ── ⚙️ SETTINGS EXPANDER (HARDWARE, CAMERAS, MODELS, I18N) ────────────────────
 with st.expander(f"⚙️  {t('hardware_title', lang=lang)} & Settings", expanded=False):
-    s1, s2, s3, s4 = st.columns([1, 1.5, 1, 1], gap="medium")
+    # Top Section: General Settings (Language, Sentry Controls, Cloud APIs)
+    s_top1, s_top2, s_top3 = st.columns([1, 1.8, 1.2], gap="large")
 
-    with s1:
+    with s_top1:
         st.markdown(f"**🌐 {t('lang_select_label', lang=lang)}**")
         lc = st.radio(
             "Language",
@@ -537,54 +639,7 @@ with st.expander(f"⚙️  {t('hardware_title', lang=lang)} & Settings", expande
                 st.session_state.chat_history[0]["content"] = t("chat_greeting", lang=nl)
             st.rerun()
 
-    with s2:
-        st.markdown(f"**📹 {t('camera_fleet_title', lang=lang)}**")
-        cam_id_list = [c.camera_id for c in st.session_state.cameras]
-        cur_act = get_active_camera()
-
-        selected_cam_id = st.selectbox(
-            t("active_preview_cam", lang=lang),
-            cam_id_list,
-            index=cam_id_list.index(cur_act.camera_id) if cur_act.camera_id in cam_id_list else 0,
-            format_func=lambda cid: next(f"{'📹' if c.protocol==CameraProtocol.RTSP else '💻'} {c.name} (📍 {c.location_zone})" for c in st.session_state.cameras if c.camera_id == cid),
-            key="fleet_cam_select",
-        )
-        if selected_cam_id != st.session_state.active_camera_id:
-            st.session_state.active_camera_id = selected_cam_id
-            st.rerun()
-
-        cf_c1, cf_c2 = st.columns([1.3, 1])
-        with cf_c1:
-            if st.button(t("add_camera_btn", lang=lang), width="stretch", key="btn_open_add_cam_settings"):
-                add_camera_dialog()
-        with cf_c2:
-            if st.button("🔌 " + ("Probe Active" if lang=="en" else "Probar Señal"), width="stretch", key="btn_probe_active_settings"):
-                with st.spinner("Probing camera..."):
-                    res = probe_camera_connection(cur_act, timeout_seconds=4.0)
-                    if res["success"]:
-                        st.success(f"🟢 {res['resolution']} · {res['latency_ms']}ms")
-                    else:
-                        st.error(f"🔴 {res['error']}")
-
-        with st.expander("📖 Guías de Conexión RTSP (SriHome & EZVIZ)", expanded=False):
-            st.markdown(
-                """
-                **📹 Cámara SriHome (Detectada y Verificada en tu red local):**
-                - **IP local**: `192.168.1.60` (red Wi-Fi `Mik00`)
-                - **Puerto RTSP**: `8554` *(SriHome utiliza el puerto 8554)*
-                - **Stream**: `/profile0` (Resolución 2K QHD 2304x1296)
-                - **Credenciales por defecto**: `admin:888888`
-                - **URL**: `rtsp://admin:888888@192.168.1.60:8554/profile0`
-                
-                ---
-                **📹 Cámara EZVIZ H8c Pro:**
-                1. **Desactivar Encriptación**: En la app EZVIZ -> Ajustes de cámara -> Desactivar *Encriptación de video*.
-                2. **Código de Verificación**: Código de 6 letras mayúsculas en la etiqueta de la cámara.
-                3. **URL**: `rtsp://admin:VERIFICACION@IP_CAMARA:554/H.264/ch1/main`
-                """
-            )
-
-    with s3:
+    with s_top2:
         st.markdown(f"**🛡️ {t('sentry_mode_label', lang=lang)}**")
         mode_opts = [t("sentry_focus_mode", lang=lang), t("sentry_patrol_mode", lang=lang)]
         cur_mode_idx = 0 if st.session_state.sentry_patrol_mode == "focus" else 1
@@ -597,18 +652,20 @@ with st.expander(f"⚙️  {t('hardware_title', lang=lang)} & Settings", expande
         )
         st.session_state.sentry_patrol_mode = "focus" if sel_mode == mode_opts[0] else "patrol"
 
-        st.markdown(f"**⏱️ Cooldown & Sensitivity**")
-        st.session_state.cooldown = st.slider(
-            t("cooldown_label", lang=lang), 1.0, 10.0,
-            float(st.session_state.cooldown), 0.5
-        )
-        st.session_state.min_motion_area = st.slider(
-            "Motion Threshold (px)", 1000, 8000,
-            int(st.session_state.min_motion_area), 500,
-            help="Minimum contour area to consider movement a pet"
-        )
+        sc_col1, sc_col2 = st.columns(2)
+        with sc_col1:
+            st.session_state.cooldown = st.slider(
+                t("cooldown_label", lang=lang), 1.0, 10.0,
+                float(st.session_state.cooldown), 0.5
+            )
+        with sc_col2:
+            st.session_state.min_motion_area = st.slider(
+                "Motion Threshold (px)", 1000, 8000,
+                int(st.session_state.min_motion_area), 500,
+                help="Minimum contour area to consider movement a pet"
+            )
 
-    with s4:
+    with s_top3:
         st.markdown(f"**☁️ {t('cloud_title', lang=lang)}**")
         def _sl(mock: bool) -> str:
             dot = "🟡" if mock else "🟢"
@@ -622,10 +679,161 @@ with st.expander(f"⚙️  {t('hardware_title', lang=lang)} & Settings", expande
             f"Vision: <code>{st.session_state.nebius.vision_model.split('/')[-1]}</code></span>",
             unsafe_allow_html=True,
         )
-        if st.button(t("toggle_mock_btn", lang=lang), width="stretch"):
+        if st.button(t("toggle_mock_btn", lang=lang), width="stretch", key="btn_toggle_mock_settings"):
             st.session_state.nebius.mock = not st.session_state.nebius.mock
             st.session_state.vet.mock    = not st.session_state.vet.mock
             st.rerun()
+
+    # Visual Separator
+    st.markdown("<div style='margin:18px 0 16px;border-top:1px solid rgba(255,255,255,0.08);'></div>", unsafe_allow_html=True)
+
+    # Bottom Section: Android Quick-Settings Style Camera Fleet
+    f_head1, f_head2 = st.columns([3, 2], vertical_alignment="center")
+    with f_head1:
+        st.markdown(
+            f"<div style='font-size:0.96rem;font-weight:800;color:#EFF2F8;display:flex;align-items:center;gap:8px;'>"
+            f"<span>📹</span><span>{t('camera_fleet_title', lang=lang)}</span></div>"
+            f"<div style='font-size:0.75rem;color:#7A8BAD;margin-top:2px;'>"
+            + ("Android quick-settings controls: Tap a tile to toggle state between " if lang == "en" else "Control rápido estilo Android: tocá cualquier tarjeta para alternar entre ")
+            + f"<b style='color:#34D399;'>🟢 {'Active' if lang=='en' else 'Activa'}</b>, "
+            + f"<b style='color:#94A3B8;'>⚪ {'Disabled' if lang=='en' else 'Desactivada'}</b> o "
+            + f"<b style='color:#FB7185;'>🔴 {'Inactive' if lang=='en' else 'Inactiva'}</b>.</div>",
+            unsafe_allow_html=True,
+        )
+    with f_head2:
+        fb_c1, fb_c2 = st.columns([1.2, 1.4])
+        with fb_c1:
+            if st.button(t("probe_network_btn", lang=lang), width="stretch", key="btn_probe_fleet_all"):
+                with st.spinner(t("probing_network", lang=lang)):
+                    probed = probe_fleet_statuses(st.session_state.cameras, fast_timeout=1.2)
+                    st.session_state.camera_statuses.update(probed)
+                    st.rerun()
+        with fb_c2:
+            if st.button(t("add_camera_btn", lang=lang), type="primary", width="stretch", key="btn_open_add_cam_bottom"):
+                add_camera_dialog()
+
+    # Android Quick Toggles Grid
+    cam_count = len(st.session_state.cameras)
+    if cam_count > 0:
+        cam_cols = st.columns(cam_count, gap="small")
+        cur_active_cam = get_active_camera()
+
+        for idx, cam in enumerate(st.session_state.cameras):
+            cid = cam.camera_id
+            c_status = st.session_state.camera_statuses.get(cid, "active" if cam.enabled else "disabled")
+            is_primary = (cid == cur_active_cam.camera_id)
+
+            # Icon and Styling
+            ico = "📹" if cam.protocol == CameraProtocol.RTSP else "💻"
+            bubble_cls = f"bubble-{c_status}"
+            tile_cls = f"android-tile android-tile-{c_status}" + (" android-tile-primary" if is_primary else "")
+
+            badge_text = t(f"cam_state_{c_status}", lang=lang).upper()
+            badge_cls = f"badge-{c_status}"
+
+            primary_chip = ""
+            if is_primary:
+                primary_chip = (
+                    f"<span class='tile-badge' style='background:rgba(245,158,11,0.22);color:#F59E0B;border:1px solid rgba(245,158,11,0.45);'>"
+                    f"{t('primary_view_badge', lang=lang)}</span>"
+                )
+
+            endpoint_desc = (
+                f"{cam.ip_address}:{cam.port}" if cam.protocol == CameraProtocol.RTSP
+                else f"USB #{cam.usb_index}"
+            )
+
+            with cam_cols[idx]:
+                # Android Card Container
+                st.markdown(
+                    f"""<div class='{tile_cls}'>
+                        <div>
+                            <div class='tile-top'>
+                                <div class='tile-icon-bubble {bubble_cls}'>{ico}</div>
+                                <div style='display:flex;gap:4px;'>
+                                    <span class='tile-badge {badge_cls}'>{badge_text}</span>
+                                    {primary_chip}
+                                </div>
+                            </div>
+                            <div class='tile-name'>{cam.name}</div>
+                            <div class='tile-zone'>📍 {cam.location_zone} · {cam.protocol.value.upper()}</div>
+                        </div>
+                        <div class='tile-endpoint'>{endpoint_desc}</div>
+                    </div>""",
+                    unsafe_allow_html=True,
+                )
+
+                # Android Quick-Toggle Buttons directly beneath
+                if c_status == "active":
+                    dis_lbl = "⚪ " + ("Desactivar" if lang=="es" else "Disable")
+                    if st.button(dis_lbl, key=f"btn_tog_{cid}", width="stretch", help="Tocar para apagar de la vigilancia"):
+                        cam.enabled = False
+                        st.session_state.camera_statuses[cid] = "disabled"
+                        save_cameras(st.session_state.cameras)
+                        st.rerun()
+                elif c_status == "disabled":
+                    act_lbl = "🟢 " + ("Activar" if lang=="es" else "Activate")
+                    if st.button(act_lbl, key=f"btn_tog_{cid}", width="stretch", help="Tocar para encender y verificar conexión"):
+                        res_st = probe_camera_status(cam, fast_timeout=1.2)
+                        cam.enabled = True
+                        st.session_state.camera_statuses[cid] = res_st
+                        save_cameras(st.session_state.cameras)
+                        st.rerun()
+                else:  # inactive
+                    rec_lbl = "🔄 " + ("Reconectar" if lang=="es" else "Reconnect")
+                    if st.button(rec_lbl, key=f"btn_tog_{cid}", width="stretch", help="Reintentar sondeo de red"):
+                        res_st = probe_camera_status(cam, fast_timeout=1.5)
+                        st.session_state.camera_statuses[cid] = res_st
+                        st.rerun()
+
+                # Secondary Actions: View selector or Turn Off
+                b_c1, b_c2 = st.columns([1, 1])
+                with b_c1:
+                    if not is_primary:
+                        view_lbl = "👁️ " + ("Ver" if lang=="es" else "View")
+                        if st.button(view_lbl, key=f"btn_view_{cid}", width="stretch", help="Seleccionar para el monitor en vivo"):
+                            st.session_state.active_camera_id = cid
+                            st.rerun()
+                    else:
+                        st.button("⭐ " + ("En Vista" if lang=="es" else "In View"), key=f"btn_view_{cid}", width="stretch", disabled=True)
+                with b_c2:
+                    if c_status == "inactive":
+                        off_lbl = "⚪ " + ("Apagar" if lang=="es" else "Off")
+                        if st.button(off_lbl, key=f"btn_off_{cid}", width="stretch"):
+                            cam.enabled = False
+                            st.session_state.camera_statuses[cid] = "disabled"
+                            save_cameras(st.session_state.cameras)
+                            st.rerun()
+                    else:
+                        test_lbl = "🔌 " + ("Test" if lang=="en" else "Probar")
+                        if st.button(test_lbl, key=f"btn_test_{cid}", width="stretch", help="Probar resolución y latencia"):
+                            with st.spinner("Probing..."):
+                                pr = probe_camera_connection(cam, timeout_seconds=3.0)
+                                if pr["success"]:
+                                    st.session_state.camera_statuses[cid] = "active"
+                                    st.success(f"🟢 {pr['resolution']} ({pr['latency_ms']}ms)")
+                                else:
+                                    st.session_state.camera_statuses[cid] = "inactive"
+                                    st.error(f"🔴 {pr['error']}")
+
+    # Collapsible RTSP Configuration Guides
+    with st.expander("📖 Guías de Conexión RTSP (SriHome 2K & EZVIZ H8c Pro)", expanded=False):
+        st.markdown(
+            """
+            **📹 Cámara SriHome (Detectada y Verificada en tu red local):**
+            - **IP local**: `192.168.1.60` (red Wi-Fi `Mik00`)
+            - **Puerto RTSP**: `8554` *(SriHome utiliza el puerto 8554)*
+            - **Stream**: `/profile0` (Resolución 2K QHD 2304x1296)
+            - **Credenciales por defecto**: `admin:888888`
+            - **URL verificada**: `rtsp://admin:888888@192.168.1.60:8554/profile0`
+            
+            ---
+            **📹 Cámara EZVIZ H8c Pro:**
+            1. **Desactivar Encriptación**: En la app EZVIZ -> Ajustes de cámara -> Desactivar *Encriptación de video*.
+            2. **Código de Verificación**: Código de 6 letras mayúsculas en la etiqueta de la cámara.
+            3. **URL**: `rtsp://admin:VERIFICACION@IP_CAMARA:554/H.264/ch1/main`
+            """
+        )
 
 # ── MODAL DIALOGS (STREAMLIT 1.63+ NATIVE) ───────────────────────────────────
 @st.dialog("➕ " + ("Connect New IP / USB Camera" if lang == "en" else "Conectar Nueva Cámara IP / USB"))
@@ -1036,10 +1244,19 @@ with tab_monitor:
     c_bar1, c_bar2 = st.columns([3.5, 1.2])
     with c_bar1:
         c_pills_opts = [c.camera_id for c in st.session_state.cameras]
+        def _cam_pill_label(cid: str) -> str:
+            c = next((cam for cam in st.session_state.cameras if cam.camera_id == cid), None)
+            if not c:
+                return cid
+            c_stat = st.session_state.camera_statuses.get(cid, "active" if c.enabled else "disabled")
+            dot = "🟢" if c_stat == "active" else ("⚪" if c_stat == "disabled" else "🔴")
+            ico = "📹" if c.protocol == CameraProtocol.RTSP else "💻"
+            return f"{dot} {ico} {c.name} · 📍 {c.location_zone}"
+
         sel_pill_cam = st.pills(
             "Fleet Cameras",
             options=c_pills_opts,
-            format_func=lambda cid: next(f"{'📹' if c.protocol==CameraProtocol.RTSP else '💻'} {c.name} · 📍 {c.location_zone}" for c in st.session_state.cameras if c.camera_id == cid),
+            format_func=_cam_pill_label,
             default=cur_camera.camera_id,
             key="pills_cam_tab1_selector",
             label_visibility="collapsed",
@@ -1113,7 +1330,10 @@ with tab_monitor:
         if sentry_active:
             # Determinamos si vigilamos la cámara actual o la flota en patrulla
             if st.session_state.sentry_patrol_mode == "patrol":
-                fleet = [c for c in st.session_state.cameras if c.enabled]
+                fleet = [
+                    c for c in st.session_state.cameras
+                    if c.enabled and st.session_state.camera_statuses.get(c.camera_id) != "inactive"
+                ]
                 patrol_cams = fleet if fleet else [cur_camera]
             else:
                 patrol_cams = [cur_camera]

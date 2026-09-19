@@ -136,6 +136,44 @@ class TestCameraNetworkSystem(unittest.TestCase):
             if test_events_file.exists():
                 test_events_file.unlink()
 
+    def test_3_state_probe_fleet(self):
+        """Verifica la lógica de los 3 estados: active, disabled, e inactive."""
+        from core.camera_manager import probe_camera_status, probe_fleet_statuses
+
+        # 1. Cámara desactivada -> disabled
+        cam_disabled = CameraProfile(
+            camera_id="cam_dis",
+            name="Disabled Cam",
+            location_zone="Patio",
+            protocol=CameraProtocol.RTSP,
+            ip_address="192.168.1.60",
+            port=8554,
+            enabled=False,
+        )
+        self.assertEqual(probe_camera_status(cam_disabled), "disabled")
+
+        # 2. Cámara activa viva (SriHome) -> active
+        self.assertEqual(probe_camera_status(self.test_cam, fast_timeout=1.5), "active")
+
+        # 3. Cámara configurada pero IP inalcanzable -> inactive
+        cam_offline = CameraProfile(
+            camera_id="cam_offline",
+            name="Offline Cam",
+            location_zone="Garage",
+            protocol=CameraProtocol.RTSP,
+            ip_address="192.168.1.249", # IP inexistente
+            port=554,
+            enabled=True,
+        )
+        self.assertEqual(probe_camera_status(cam_offline, fast_timeout=0.6), "inactive")
+
+        # 4. Sondeo en lote paralelo
+        batch = probe_fleet_statuses([cam_disabled, self.test_cam, cam_offline], fast_timeout=0.8)
+        self.assertEqual(batch["cam_dis"], "disabled")
+        self.assertEqual(batch["test_cam_living"], "active")
+        self.assertEqual(batch["cam_offline"], "inactive")
+
 
 if __name__ == "__main__":
     unittest.main()
+

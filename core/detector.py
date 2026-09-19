@@ -145,7 +145,9 @@ class PetMotionDetector:
             else:
                 src_url = str(self.camera_source)
                 logger.info("Abriendo stream de red/RTSP (IP Cam): %s...", src_url)
-                self._cap = cv2.VideoCapture(src_url)
+                import os
+                os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "rtsp_transport;tcp|timeout;2000000"
+                self._cap = cv2.VideoCapture(src_url, cv2.CAP_FFMPEG)
 
             if not self._cap or not self._cap.isOpened():
                 logger.error("No se pudo abrir la fuente de video: %s", str(self.camera_source))
