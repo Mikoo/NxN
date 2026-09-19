@@ -42,6 +42,9 @@ class PetMotionDetector:
         history: int = 500,
         var_threshold: float = 25.0,
         detect_shadows: bool = False,
+        camera_id: Optional[str] = None,
+        camera_name: Optional[str] = None,
+        location_zone: Optional[str] = None,
     ) -> None:
         """
         Inicializa el detector de movimiento.
@@ -54,9 +57,15 @@ class PetMotionDetector:
             history: Número de fotogramas que MOG2 recuerda para modelar el fondo.
             var_threshold: Umbral de varianza de Mahalanobis para detección de fondo.
             detect_shadows: Si es True, detecta y marca sombras (más costoso en CPU).
+            camera_id: Identificador de la cámara asociada.
+            camera_name: Nombre amigable de la cámara.
+            location_zone: Habitación o zona de la casa.
         """
         self.camera_source: int | str = camera_source
         self.camera_index: int = int(camera_source) if (isinstance(camera_source, int) or (isinstance(camera_source, str) and camera_source.isdigit())) else 0
+        self.camera_id: Optional[str] = camera_id
+        self.camera_name: Optional[str] = camera_name
+        self.location_zone: Optional[str] = location_zone
         self.min_area: int = min_area
         self.cooldown_seconds: float = cooldown_seconds
         self.snapshots_dir: Path = Path(snapshots_dir)
@@ -327,6 +336,35 @@ class PetMotionDetector:
             logger.info("Rafaga de micro-evento capturada (%d fotogramas): %s", len(burst_paths), burst_paths)
 
         return burst_paths
+
+    def switch_camera(
+        self,
+        new_source: int | str,
+        camera_id: Optional[str] = None,
+        camera_name: Optional[str] = None,
+        location_zone: Optional[str] = None,
+    ) -> bool:
+        """
+        Cambia dinámicamente la fuente de video en caliente,
+        reiniciando el capturador y el sustractor de fondo MOG2.
+        """
+        self.stop()
+        self.camera_source = new_source
+        self.camera_index = int(new_source) if (isinstance(new_source, int) or (isinstance(new_source, str) and str(new_source).isdigit())) else 0
+        if camera_id is not None:
+            self.camera_id = camera_id
+        if camera_name is not None:
+            self.camera_name = camera_name
+        if location_zone is not None:
+            self.location_zone = location_zone
+        self._frame_buffer.clear()
+        logger.info(
+            "Cámara conmutada a: %s (ID: %s, Zona: %s)",
+            str(self.camera_source),
+            str(self.camera_id),
+            str(self.location_zone),
+        )
+        return self.start()
 
     def stop(self) -> None:
         """Libera la cámara y los recursos de memoria."""

@@ -17,6 +17,13 @@ import numpy as np
 import streamlit as st
 from PIL import Image
 
+from core.camera_manager import (
+    DEFAULT_CAMERAS,
+    get_camera_by_id,
+    load_cameras,
+    probe_camera_connection,
+    save_cameras,
+)
 from core.detector import PetMotionDetector
 from core.i18n import t, t_val
 from core.nebius_client import NebiusClient
@@ -24,6 +31,8 @@ from core.report_generator import ReportGenerator
 from core.schemas import (
     BehaviorAnalysis,
     BehavioralBout,
+    CameraProfile,
+    CameraProtocol,
     HabitMatrixMetrics,
     MoodType,
     PetActivityType,
@@ -335,8 +344,22 @@ if "pets" not in st.session_state:
 if "active_pet_id" not in st.session_state:
     st.session_state.active_pet_id = "ichi"
 
+if "cameras" not in st.session_state:
+    st.session_state.cameras = load_cameras()
+
+if "active_camera_id" not in st.session_state:
+    st.session_state.active_camera_id = (
+        st.session_state.cameras[0].camera_id if st.session_state.cameras else "srihome_living"
+    )
+
+if "sentry_patrol_mode" not in st.session_state:
+    st.session_state.sentry_patrol_mode = "focus"
+
+if "zone_filter" not in st.session_state:
+    st.session_state.zone_filter = "all"
+
 if "camera_source_mode" not in st.session_state:
-    st.session_state.camera_source_mode = "usb"
+    st.session_state.camera_source_mode = "rtsp"
 if "camera_index" not in st.session_state or st.session_state.camera_index != 0:
     st.session_state.camera_index = 0
 if st.session_state.get("cam_index_select") == 1:
@@ -374,12 +397,20 @@ if "chat_history" not in st.session_state:
         {"role": "assistant", "content": t("chat_greeting", lang=lang)}
     ]
 
+def get_active_camera() -> CameraProfile:
+    """Retorna el perfil de la cámara actualmente seleccionada."""
+    cams: List[CameraProfile] = st.session_state.get("cameras", [])
+    act_id: str = st.session_state.get("active_camera_id", "")
+    cam = get_camera_by_id(cams, act_id)
+    if cam is None and cams:
+        cam = cams[0]
+        st.session_state.active_camera_id = cam.camera_id
+    return cam or DEFAULT_CAMERAS[0]
+
 def get_resolved_camera_source() -> int | str:
     """Retorna la fuente de camara configurada (indice int para USB o URL str para RTSP)."""
-    if st.session_state.camera_source_mode == "rtsp":
-        url = st.session_state.get("rtsp_url", "").strip()
-        return url if url else 0
-    return int(st.session_state.get("camera_index", 0))
+    cam = get_active_camera()
+    return cam.get_stream_source()
 
 # Ensure active pet is valid
 active_pet: PetProfile = next(
@@ -507,62 +538,65 @@ with st.expander(f"⚙️  {t('hardware_title', lang=lang)} & Settings", expande
             st.rerun()
 
     with s2:
-        st.markdown(f"**📹 {t('cam_source_label', lang=lang)}**")
-        cam_opts = [t("cam_source_usb", lang=lang), t("cam_source_rtsp", lang=lang)]
-        cur_cam_idx = 0 if st.session_state.camera_source_mode == "usb" else 1
-        sel_cam_mode = st.radio(
-            "Mode",
-            cam_opts,
-            index=cur_cam_idx,
-            horizontal=True,
-            label_visibility="collapsed",
-            key="cam_mode_radio",
+        st.markdown(f"**📹 {t('camera_fleet_title', lang=lang)}**")
+        cam_id_list = [c.camera_id for c in st.session_state.cameras]
+        cur_act = get_active_camera()
+
+        selected_cam_id = st.selectbox(
+            t("active_preview_cam", lang=lang),
+            cam_id_list,
+            index=cam_id_list.index(cur_act.camera_id) if cur_act.camera_id in cam_id_list else 0,
+            format_func=lambda cid: next(f"{'📹' if c.protocol==CameraProtocol.RTSP else '💻'} {c.name} (📍 {c.location_zone})" for c in st.session_state.cameras if c.camera_id == cid),
+            key="fleet_cam_select",
         )
-        st.session_state.camera_source_mode = "usb" if sel_cam_mode == cam_opts[0] else "rtsp"
+        if selected_cam_id != st.session_state.active_camera_id:
+            st.session_state.active_camera_id = selected_cam_id
+            st.rerun()
 
-        if st.session_state.camera_source_mode == "usb":
-            cam_options = [0, 1]
-            st.session_state.camera_index = st.selectbox(
-                t("camera_select_label", lang=lang),
-                cam_options,
-                index=0 if st.session_state.camera_index not in cam_options else cam_options.index(st.session_state.camera_index),
-                format_func=lambda i: "Laptop Webcam (Camera 0 - Active 🟢)" if i == 0 else "NVIDIA Virtual Camera (Camera 1 - Black ⚠️)",
-                key="cam_index_select",
+        cf_c1, cf_c2 = st.columns([1.3, 1])
+        with cf_c1:
+            if st.button(t("add_camera_btn", lang=lang), width="stretch", key="btn_open_add_cam_settings"):
+                add_camera_dialog()
+        with cf_c2:
+            if st.button("🔌 " + ("Probe Active" if lang=="en" else "Probar Señal"), width="stretch", key="btn_probe_active_settings"):
+                with st.spinner("Probing camera..."):
+                    res = probe_camera_connection(cur_act, timeout_seconds=4.0)
+                    if res["success"]:
+                        st.success(f"🟢 {res['resolution']} · {res['latency_ms']}ms")
+                    else:
+                        st.error(f"🔴 {res['error']}")
+
+        with st.expander("📖 Guías de Conexión RTSP (SriHome & EZVIZ)", expanded=False):
+            st.markdown(
+                """
+                **📹 Cámara SriHome (Detectada y Verificada en tu red local):**
+                - **IP local**: `192.168.1.60` (red Wi-Fi `Mik00`)
+                - **Puerto RTSP**: `8554` *(SriHome utiliza el puerto 8554)*
+                - **Stream**: `/profile0` (Resolución 2K QHD 2304x1296)
+                - **Credenciales por defecto**: `admin:888888`
+                - **URL**: `rtsp://admin:888888@192.168.1.60:8554/profile0`
+                
+                ---
+                **📹 Cámara EZVIZ H8c Pro:**
+                1. **Desactivar Encriptación**: En la app EZVIZ -> Ajustes de cámara -> Desactivar *Encriptación de video*.
+                2. **Código de Verificación**: Código de 6 letras mayúsculas en la etiqueta de la cámara.
+                3. **URL**: `rtsp://admin:VERIFICACION@IP_CAMARA:554/H.264/ch1/main`
+                """
             )
-        else:
-            preset_c1, preset_c2 = st.columns(2)
-            if preset_c1.button("📹 Cargar SriHome (192.168.1.60)", key="btn_preset_srihome", width="stretch", help="Cargar stream verificado de tu cámara SriHome"):
-                st.session_state.rtsp_url = "rtsp://admin:888888@192.168.1.60:8554/profile0"
-                st.rerun()
-            if preset_c2.button("📹 Cargar EZVIZ H8c Pro", key="btn_preset_ezviz", width="stretch", help="Cargar plantilla para EZVIZ"):
-                st.session_state.rtsp_url = "rtsp://admin:VERIFICATION_CODE@192.168.1.55:554/H.264/ch1/main"
-                st.rerun()
-
-            st.session_state.rtsp_url = st.text_input(
-                t("rtsp_url_label", lang=lang),
-                value=st.session_state.rtsp_url,
-                help=t("rtsp_helper", lang=lang),
-            )
-
-            with st.expander("📖 Guías de Conexión RTSP (SriHome & EZVIZ)", expanded=False):
-                st.markdown(
-                    """
-                    **📹 Cámara SriHome (Detectada y Verificada en tu red local):**
-                    - **IP local**: `192.168.1.60` (red Wi-Fi `Mik00`)
-                    - **Puerto RTSP**: `8554` *(SriHome utiliza el puerto 8554 en lugar del 554 estándar)*
-                    - **Stream**: `/profile0` (Resolución 2K QHD 2304x1296) o `/profile1` (substream)
-                    - **Credenciales por defecto**: `admin:888888` (o tu contraseña de dispositivo si la cambiaste en la app)
-                    - **URL Verificada**: `rtsp://admin:888888@192.168.1.60:8554/profile0`
-                    
-                    ---
-                    **📹 Cámara EZVIZ H8c Pro:**
-                    1. **Desactivar Encriptación**: En la app EZVIZ -> Ajustes de cámara -> Desactivar *Encriptación de video*.
-                    2. **Código de Verificación**: Código de 6 letras mayúsculas en la etiqueta de la cámara.
-                    3. **URL**: `rtsp://admin:VERIFICACION@IP_CAMARA:554/H.264/ch1/main`
-                    """
-                )
 
     with s3:
+        st.markdown(f"**🛡️ {t('sentry_mode_label', lang=lang)}**")
+        mode_opts = [t("sentry_focus_mode", lang=lang), t("sentry_patrol_mode", lang=lang)]
+        cur_mode_idx = 0 if st.session_state.sentry_patrol_mode == "focus" else 1
+        sel_mode = st.radio(
+            "Sentry Mode",
+            mode_opts,
+            index=cur_mode_idx,
+            label_visibility="collapsed",
+            key="radio_sentry_mode_select",
+        )
+        st.session_state.sentry_patrol_mode = "focus" if sel_mode == mode_opts[0] else "patrol"
+
         st.markdown(f"**⏱️ Cooldown & Sensitivity**")
         st.session_state.cooldown = st.slider(
             t("cooldown_label", lang=lang), 1.0, 10.0,
@@ -594,6 +628,167 @@ with st.expander(f"⚙️  {t('hardware_title', lang=lang)} & Settings", expande
             st.rerun()
 
 # ── MODAL DIALOGS (STREAMLIT 1.63+ NATIVE) ───────────────────────────────────
+@st.dialog("➕ " + ("Connect New IP / USB Camera" if lang == "en" else "Conectar Nueva Cámara IP / USB"))
+def add_camera_dialog():
+    st.markdown(
+        "<div style='font-size:0.83rem;color:#7A8BAD;margin-bottom:12px;'>"
+        + ("Select a quick manufacturer preset or configure classical IP camera network parameters below." if lang == "en"
+           else "Seleccioná un preset de fabricante o configurá los parámetros clásicos de red de la cámara IP.")
+        + "</div>",
+        unsafe_allow_html=True,
+    )
+
+    preset_opts = [
+        "SriHome (8554 /profile0)",
+        "EZVIZ H8c Pro (554 /H.264/ch1/main)",
+        "Tapo / TP-Link (554 /stream1)",
+        "Hikvision / Dahua (554 /Streaming/Channels/101)",
+        "Laptop Webcam USB (DirectShow)",
+        "Custom RTSP / HTTP Stream",
+    ]
+    chosen_preset = st.selectbox(
+        t("preset_brand_label", lang=lang),
+        preset_opts,
+        index=0,
+        key="dlg_cam_preset_select",
+    )
+
+    default_proto = "rtsp"
+    default_ip = "192.168.1.60"
+    default_port = 8554
+    default_user = "admin"
+    default_pass = "888888"
+    default_path = "/profile0"
+    default_name = "SriHome 2K Cam"
+    default_zone = "Living Room"
+
+    if "EZVIZ" in chosen_preset:
+        default_name = "EZVIZ H8c Pro"
+        default_zone = "Comedero y Bebedero"
+        default_port = 554
+        default_pass = "VERIFICATION_CODE"
+        default_path = "/H.264/ch1/main"
+        default_ip = "192.168.1.55"
+    elif "Tapo" in chosen_preset:
+        default_name = "Tapo IP Cam"
+        default_zone = "Patio / Balcón"
+        default_port = 554
+        default_pass = ""
+        default_path = "/stream1"
+        default_ip = "192.168.1.100"
+    elif "Hikvision" in chosen_preset:
+        default_name = "Hikvision Cam"
+        default_zone = "Dormitorio"
+        default_port = 554
+        default_pass = ""
+        default_path = "/Streaming/Channels/101"
+        default_ip = "192.168.1.64"
+    elif "Webcam" in chosen_preset:
+        default_proto = "usb"
+        default_name = "USB Webcam Auxiliar"
+        default_zone = "Estudio / Escritorio"
+        default_ip = ""
+        default_port = 0
+        default_user = ""
+        default_pass = ""
+        default_path = ""
+    elif "Custom" in chosen_preset:
+        default_name = "Custom Stream Cam"
+        default_zone = "Pasillo"
+        default_port = 554
+        default_path = "/live"
+
+    col_n, col_z = st.columns(2)
+    with col_n:
+        c_name = st.text_input(t("camera_name_label", lang=lang), value=default_name, key="dlg_cam_name_input")
+    with col_z:
+        zone_suggestions = ["Living Room", "Comedero y Bebedero", "Dormitorio", "Patio / Balcón", "Pasillo", "Estudio / Escritorio", "Entrada"]
+        c_zone = st.selectbox(
+            t("camera_zone_label", lang=lang),
+            zone_suggestions,
+            index=zone_suggestions.index(default_zone) if default_zone in zone_suggestions else 0,
+            key="dlg_cam_zone_input",
+        )
+
+    if default_proto == "usb":
+        c_usb_idx = st.number_input(t("camera_usb_idx_label", lang=lang), min_value=0, max_value=8, value=0, key="dlg_cam_usb_idx")
+        c_ip, c_port, c_user, c_pass, c_path = "", 0, "", "", ""
+        c_proto = CameraProtocol.USB
+    else:
+        c_proto = CameraProtocol.RTSP
+        c_usb_idx = 0
+        col_ip, col_port = st.columns([2.2, 1])
+        with col_ip:
+            c_ip = st.text_input(t("camera_ip_label", lang=lang), value=default_ip, key="dlg_cam_ip_input")
+        with col_port:
+            c_port = st.number_input(t("camera_port_label", lang=lang), min_value=1, max_value=65535, value=default_port, key="dlg_cam_port_input")
+
+        col_u, col_p, col_path = st.columns([1, 1, 1.3])
+        with col_u:
+            c_user = st.text_input(t("camera_user_label", lang=lang), value=default_user, key="dlg_cam_user_input")
+        with col_p:
+            c_pass = st.text_input(t("camera_pass_label", lang=lang), value=default_pass, type="password", key="dlg_cam_pass_input")
+        with col_path:
+            c_path = st.text_input(t("camera_path_label", lang=lang), value=default_path, key="dlg_cam_path_input")
+
+    temp_profile = CameraProfile(
+        camera_id="temp_probe",
+        name=c_name.strip() or "New Camera",
+        location_zone=c_zone,
+        protocol=c_proto,
+        ip_address=c_ip.strip() or None,
+        port=int(c_port),
+        username=c_user.strip(),
+        password=c_pass.strip(),
+        stream_path=c_path.strip(),
+        usb_index=int(c_usb_idx),
+    )
+
+    st.markdown(
+        f"<div style='background:rgba(0,0,0,0.25);border:1px solid rgba(255,255,255,0.08);border-radius:8px;padding:8px 12px;margin:10px 0;font-size:0.75rem;font-family:monospace;color:#CBD5E1;word-break:break-all;'>"
+        f"<b>Stream URL:</b> {temp_profile.get_masked_url()}</div>",
+        unsafe_allow_html=True,
+    )
+
+    col_probe, col_save = st.columns(2)
+    with col_probe:
+        if st.button(t("test_camera_btn", lang=lang), width="stretch", key="dlg_btn_test_cam"):
+            with st.spinner("Probing live camera..."):
+                probe_res = probe_camera_connection(temp_profile, timeout_seconds=4.0)
+                if probe_res["success"]:
+                    st.success(f"✅ ¡Conexión exitosa! {probe_res['resolution']} ({probe_res['latency_ms']}ms)")
+                else:
+                    st.error(f"❌ {probe_res['error']}")
+
+    with col_save:
+        if st.button(t("save_camera_btn", lang=lang), type="primary", width="stretch", key="dlg_btn_save_cam"):
+            if not c_name.strip():
+                st.error("Please enter a name." if lang == "en" else "Por favor ingrese un nombre.")
+            else:
+                cid = c_name.lower().replace(" ", "_").strip()
+                existing_cids = [c.camera_id for c in st.session_state.cameras]
+                if cid in existing_cids:
+                    cid = f"{cid}_{len(existing_cids)+1}"
+
+                new_cam = CameraProfile(
+                    camera_id=cid,
+                    name=c_name.strip(),
+                    location_zone=c_zone,
+                    protocol=c_proto,
+                    ip_address=c_ip.strip() or None,
+                    port=int(c_port),
+                    username=c_user.strip(),
+                    password=c_pass.strip(),
+                    stream_path=c_path.strip(),
+                    usb_index=int(c_usb_idx),
+                    enabled=True,
+                )
+                st.session_state.cameras.append(new_cam)
+                save_cameras(st.session_state.cameras)
+                st.session_state.active_camera_id = new_cam.camera_id
+                st.rerun()
+
+
 @st.dialog("➕ " + ("Register New Household Pet" if lang == "en" else "Registrar Nueva Mascota"))
 def add_pet_dialog():
     f_c1, f_c2 = st.columns(2)
@@ -833,9 +1028,30 @@ tab_monitor, tab_digest, tab_chat = st.tabs([
 with tab_monitor:
     st.markdown(f"<div class='stitle'>📡 {t('sentry_title', lang=lang)}</div>", unsafe_allow_html=True)
 
+    cur_camera = get_active_camera()
+    current_source = cur_camera.get_stream_source()
+    source_label = f"{cur_camera.name} (📍 {cur_camera.location_zone})"
+
+    # Fleet Camera switcher bar
+    c_bar1, c_bar2 = st.columns([3.5, 1.2])
+    with c_bar1:
+        c_pills_opts = [c.camera_id for c in st.session_state.cameras]
+        sel_pill_cam = st.pills(
+            "Fleet Cameras",
+            options=c_pills_opts,
+            format_func=lambda cid: next(f"{'📹' if c.protocol==CameraProtocol.RTSP else '💻'} {c.name} · 📍 {c.location_zone}" for c in st.session_state.cameras if c.camera_id == cid),
+            default=cur_camera.camera_id,
+            key="pills_cam_tab1_selector",
+            label_visibility="collapsed",
+        )
+        if sel_pill_cam and sel_pill_cam != st.session_state.active_camera_id:
+            st.session_state.active_camera_id = sel_pill_cam
+            st.rerun()
+    with c_bar2:
+        if st.button("➕ " + ("Add IP / USB Camera" if lang=="en" else "Conectar Cámara"), width="stretch", key="btn_open_add_cam_tab1"):
+            add_camera_dialog()
+
     sentry_active = st.session_state.get("sentry_active", False)
-    current_source = get_resolved_camera_source()
-    source_label = f"Webcam {current_source}" if isinstance(current_source, int) else f"IP Camera ({str(current_source)[:28]}...)"
 
     # Sentinel Top Action Banner
     sentry_cls = "sentry-panel" if sentry_active else "sentry-panel sentry-panel-standby"
@@ -848,7 +1064,8 @@ with tab_monitor:
                         <span>{'AUTONOMOUS SENTRY: ACTIVE SCANNING' if sentry_active else 'AUTONOMOUS SENTRY: STANDBY'}</span>
                     </div>
                     <div style='font-size:0.77rem;color:#7A8BAD;margin-top:4px;'>
-                        Source: <b style='color:#CBD5E1;'>{source_label}</b> &nbsp;·&nbsp;
+                        Active: <b style='color:#CBD5E1;'>{source_label}</b> &nbsp;·&nbsp;
+                        Surveillance: <b style='color:#38BDF8;'>{'🌐 Patrol Fleet (Cross-Camera)' if st.session_state.sentry_patrol_mode == 'patrol' else '🎯 Focus Camera'}</b> &nbsp;·&nbsp;
                         Threshold: <b>{st.session_state.min_motion_area} px</b> &nbsp;·&nbsp;
                         Cooldown: <b>{st.session_state.cooldown:.1f}s</b>
                     </div>
@@ -857,14 +1074,6 @@ with tab_monitor:
         </div>""",
         unsafe_allow_html=True,
     )
-
-    if current_source == 1:
-        st.warning("⚠️ **Webcam 1 is NVIDIA Broadcast Virtual Camera and produces black frames.** Switch to your laptop's integrated camera (Camera 0):")
-        if st.button("👉 Switch to Laptop Webcam (Camera 0)", type="primary", key="switch_to_cam0"):
-            st.session_state.camera_index = 0
-            st.session_state.cam_index_select = 0
-            st.session_state.camera_source_mode = "usb"
-            st.rerun()
 
     sc_col1, sc_col2 = st.columns([2.5, 1], gap="large")
 
@@ -902,19 +1111,35 @@ with tab_monitor:
 
         # ── ACTIVE SENTINEL LOOP ──────────────────────────────────────────────
         if sentry_active:
-            det = PetMotionDetector(
-                camera_source=current_source,
-                min_area=int(st.session_state.min_motion_area),
-                cooldown_seconds=float(st.session_state.cooldown),
-                snapshots_dir=ROOT_DIR / "data" / "snapshots",
-            )
-            if not det.start():
-                st.error(f"❌ Cannot connect to video source: {current_source}. Please verify your webcam index or EZVIZ RTSP URL in Settings.")
-                st.session_state.sentry_active = False
+            # Determinamos si vigilamos la cámara actual o la flota en patrulla
+            if st.session_state.sentry_patrol_mode == "patrol":
+                fleet = [c for c in st.session_state.cameras if c.enabled]
+                patrol_cams = fleet if fleet else [cur_camera]
             else:
+                patrol_cams = [cur_camera]
+
+            triggered = False
+            for target_cam in patrol_cams:
+                if triggered:
+                    break
+                target_src = target_cam.get_stream_source()
+
+                det = PetMotionDetector(
+                    camera_source=target_src,
+                    min_area=int(st.session_state.min_motion_area),
+                    cooldown_seconds=float(st.session_state.cooldown),
+                    snapshots_dir=ROOT_DIR / "data" / "snapshots",
+                    camera_id=target_cam.camera_id,
+                    camera_name=target_cam.name,
+                    location_zone=target_cam.location_zone,
+                )
+                if not det.start():
+                    logger.warning("No se pudo conectar a %s (%s)", target_cam.name, target_src)
+                    continue
+
                 try:
-                    # Stream frames smoothly; yield upon motion trigger or frame budget
-                    for _ in range(60):
+                    frame_budget = 25 if len(patrol_cams) > 1 else 60
+                    for _ in range(frame_budget):
                         ret, frame = det.read_frame()
                         if not ret or frame is None:
                             break
@@ -922,21 +1147,19 @@ with tab_monitor:
                         motion_detected, fg_mask, bboxes = det.process_frame(frame)
                         annotated = frame.copy()
 
-                        # Draw green bounding boxes for moving regions
                         for (x, y, w, h) in bboxes:
                             cv2.rectangle(annotated, (x, y), (x + w, y + h), (52, 211, 153), 2)
                             cv2.putText(
-                                annotated, "PET MOTION", (x, max(18, y - 6)),
-                                cv2.FONT_HERSHEY_SIMPLEX, 0.52, (52, 211, 153), 2
+                                annotated, f"MOTION · {target_cam.location_zone}", (x, max(18, y - 6)),
+                                cv2.FONT_HERSHEY_SIMPLEX, 0.48, (52, 211, 153), 2
                             )
 
                         cd_rem = det.get_cooldown_remaining()
                         can_cap = det.can_capture()
 
-                        # Check autonomous trigger condition
                         if motion_detected and can_cap:
                             hud_slot.markdown(
-                                f"<div class='sentry-status-alert'>⚡ {t('sentry_status_motion', lang=lang)}</div>",
+                                f"<div class='sentry-status-alert'>⚡ {t('sentry_status_motion', lang=lang)} (📹 {target_cam.name})</div>",
                                 unsafe_allow_html=True,
                             )
                             burst = det.capture_micro_event_burst(frame, prefix="sentry")
@@ -948,12 +1171,16 @@ with tab_monitor:
                                     pet_id=active_pet.pet_id,
                                     lang=lang,
                                 )
+                                analysis.camera_id = target_cam.camera_id
+                                analysis.camera_name = target_cam.name
+                                analysis.location_zone = target_cam.location_zone
                                 vr = st.session_state.generator.add_event(analysis, lang=lang)
                                 st.session_state.last_sentry_burst = [str(p) for p in burst]
                                 st.session_state.last_sentry_analysis = analysis
+                                triggered = True
                                 break
                         else:
-                            mot_desc = f"🐾 {len(bboxes)} motion target(s)" if motion_detected else f"👁️ {t('sentry_status_scanning', lang=lang)}"
+                            mot_desc = f"🐾 {len(bboxes)} target(s) in {target_cam.location_zone}" if motion_detected else f"👁️ Scanning {target_cam.name}"
                             cd_desc = f"⏳ Cooldown: {cd_rem:.1f}s" if cd_rem > 0 else "🟢 Sensor Ready"
                             hud_slot.markdown(
                                 f"<div class='sentry-status-bar'><span>{mot_desc}</span><span>{cd_desc}</span></div>",
@@ -965,16 +1192,19 @@ with tab_monitor:
                 finally:
                     det.stop()
 
-                if st.session_state.get("sentry_active", False):
-                    st.rerun()
+            if st.session_state.get("sentry_active", False):
+                st.rerun()
 
         # ── LIVE PREVIEW TEST ─────────────────────────────────────────────────
         elif tpreview:
-            with st.spinner("Connecting to camera..."):
+            with st.spinner(f"Connecting to {cur_camera.name}..."):
                 det = PetMotionDetector(
                     camera_source=current_source,
                     cooldown_seconds=0.1,
                     snapshots_dir=ROOT_DIR / "data" / "snapshots",
+                    camera_id=cur_camera.camera_id,
+                    camera_name=cur_camera.name,
+                    location_zone=cur_camera.location_zone,
                 )
                 if det.start():
                     ret, frame = det.read_frame()
@@ -983,21 +1213,24 @@ with tab_monitor:
                         cv2.imwrite(str(ROOT_DIR / "current_live_cam0.jpg"), frame)
                         cv2.imwrite(str(ROOT_DIR / "test_camera_0.jpg"), frame)
                         pslot.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
-                                    caption=f"Camera {det.camera_source} · Live Preview (Brightness: {frame.mean():.1f})",
+                                    caption=f"{cur_camera.name} · Live Preview ({frame.shape[1]}x{frame.shape[0]} · Brightness: {frame.mean():.1f})",
                                     width="stretch")
-                        st.success(f"✅ Camera {det.camera_source} operational! Brightness: {frame.mean():.1f}/255")
+                        st.success(f"✅ {cur_camera.name} operational! Resolution: {frame.shape[1]}x{frame.shape[0]}, Brightness: {frame.mean():.1f}/255")
                     else:
                         st.error("Cannot read frame from camera.")
                 else:
-                    st.error(f"Camera source {current_source} not available.")
+                    st.error(f"Camera {cur_camera.name} not reachable. Check network settings.")
 
         # ── MANUAL TRIGGER FALLBACK ───────────────────────────────────────────
         elif tburst or tsingle:
-            with st.spinner("Opening camera..."):
+            with st.spinner(f"Opening {cur_camera.name}..."):
                 det = PetMotionDetector(
                     camera_source=current_source,
                     cooldown_seconds=0.1,
                     snapshots_dir=ROOT_DIR / "data" / "snapshots",
+                    camera_id=cur_camera.camera_id,
+                    camera_name=cur_camera.name,
+                    location_zone=cur_camera.location_zone,
                 )
                 if det.start():
                     ret, frame = det.read_frame()
@@ -1005,7 +1238,7 @@ with tab_monitor:
                         cv2.imwrite(str(ROOT_DIR / "current_live_cam0.jpg"), frame)
                         cv2.imwrite(str(ROOT_DIR / "test_camera_0.jpg"), frame)
                         pslot.image(cv2.cvtColor(frame, cv2.COLOR_BGR2RGB),
-                                    caption=f"Camera · Live Frame", width="stretch")
+                                    caption=f"{cur_camera.name} · Live Frame", width="stretch")
                         if tburst:
                             with st.spinner(t("processing_burst", lang=lang)):
                                 burst = det.capture_micro_event_burst(frame, prefix="manual")
@@ -1018,6 +1251,9 @@ with tab_monitor:
                                     pet_id=active_pet.pet_id,
                                     lang=lang,
                                 )
+                                analysis.camera_id = cur_camera.camera_id
+                                analysis.camera_name = cur_camera.name
+                                analysis.location_zone = cur_camera.location_zone
                                 vr = st.session_state.generator.add_event(analysis, lang=lang)
                                 st.session_state.last_sentry_burst = [str(p) for p in burst]
                                 st.session_state.last_sentry_analysis = analysis
@@ -1029,14 +1265,13 @@ with tab_monitor:
                         det.stop()
                         st.error("Cannot read frame from camera.")
                 else:
-                    st.error(f"Camera source {current_source} not available.")
+                    st.error(f"Camera {cur_camera.name} not reachable.")
         else:
-            # Standby mode preview
             snap = ROOT_DIR / "current_live_cam0.jpg"
             if not snap.exists():
                 snap = ROOT_DIR / "test_camera_0.jpg"
             if snap.exists():
-                pslot.image(str(snap), caption=f"Camera {current_source} · Standby Preview", width="stretch")
+                pslot.image(str(snap), caption=f"{cur_camera.name} (📍 {cur_camera.location_zone}) · Standby Preview", width="stretch")
             else:
                 pslot.markdown(
                     "<div class='cam-ph'><div style='font-size:2.2rem;'>📷</div>"
@@ -1100,7 +1335,7 @@ with tab_monitor:
     # ── TIMELINE CONTROLS & FILTER ────────────────────────────────────────────
     st.markdown(f"<div class='stitle'>🗂️ {t('timeline_header', lang=lang)}</div>", unsafe_allow_html=True)
 
-    tf_c1, tf_c2, tf_c3 = st.columns([3, 3, 1.2])
+    tf_c1, tf_c2, tf_c3 = st.columns([2.5, 2.5, 1.2])
     with tf_c1:
         cur_opt = f"{'Current:' if lang=='en' else 'Actual:'} {active_pet.name}"
         all_opt = "All Household Pets" if lang == "en" else "Todas las Mascotas"
@@ -1113,6 +1348,18 @@ with tab_monitor:
         )
         st.session_state.timeline_filter = "active" if cur_opt in f_mode else "all"
 
+    all_z_lbl = t("all_zones", lang=lang)
+    with tf_c2:
+        recorded_zones = sorted(list({e.location_zone for e in events_all if e.location_zone} | {"Living Room", "Comedero y Bebedero"}))
+        zone_opts = [all_z_lbl] + recorded_zones
+        sel_zone = st.selectbox(
+            f"📍 {t('zone_filter_label', lang=lang)}",
+            zone_opts,
+            index=0 if st.session_state.zone_filter not in zone_opts else zone_opts.index(st.session_state.zone_filter),
+            key="timeline_zone_filter_select",
+        )
+        st.session_state.zone_filter = sel_zone
+
     with tf_c3:
         if st.button(t("clear_history_btn", lang=lang), width="stretch"):
             target_del = active_pet.pet_id if st.session_state.timeline_filter == "active" else None
@@ -1120,6 +1367,8 @@ with tab_monitor:
             st.rerun()
 
     display_events = events_pet if st.session_state.timeline_filter == "active" else events_all
+    if st.session_state.zone_filter != all_z_lbl:
+        display_events = [e for e in display_events if (e.location_zone == st.session_state.zone_filter)]
 
     if not display_events:
         st.markdown(
@@ -1146,6 +1395,10 @@ with tab_monitor:
             ev_pet_icon = _ICONS.get(ev_pet.species if ev_pet else "Other", "🐾")
             pet_badge = f"<span class='pb pb-pet'>{ev_pet_icon} {ev_pet_name}</span>"
 
+            loc_tag = ev.location_zone or "Living Room"
+            cam_tag = ev.camera_name or "Camera"
+            cam_badge = f"<span class='pb' style='background:rgba(56,189,248,0.12);color:#38BDF8;border:1px solid rgba(56,189,248,0.30);'>📹 {cam_tag} · 📍 {loc_tag}</span>"
+
             valid  = [p for p in (ev.image_paths or []) if Path(p).exists()]
             peak   = valid[1] if len(valid)>1 else (valid[0] if valid else None)
 
@@ -1165,7 +1418,7 @@ with tab_monitor:
                 st.markdown(
                     f"""<div class='mbody'>
                         <div style='display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;flex-wrap:wrap;gap:6px;'>
-                            <div>{pet_badge}{sbadge}{_pb(act,apb)}{_pb(mood,mpb)}{_pb(pos,"pb-v")}</div>
+                            <div>{pet_badge}{cam_badge}{sbadge}{_pb(act,apb)}{_pb(mood,mpb)}{_pb(pos,"pb-v")}</div>
                             <div class='mts'>{ts} · {ago}</div>
                         </div>
                         <div class='mdiag'>{act} ({ev_pet_name})</div>
@@ -1354,6 +1607,30 @@ with tab_digest:
         )
         st.plotly_chart(fig_chrono, width="stretch")
 
+        # ── SPATIAL ACTIVITY & ROOM OCCUPANCY (CROSS-CAMERA) ──────────────────
+        if metrics.zone_visits_count:
+            z_labels = list(metrics.zone_visits_count.keys())
+            z_values = list(metrics.zone_visits_count.values())
+            fig_spatial = go.Figure(data=[go.Pie(
+                labels=z_labels,
+                values=z_values,
+                hole=0.52,
+                marker=dict(colors=["#F59E0B", "#38BDF8", "#34D399", "#A78BFA", "#FB7185", "#FBBF24"]),
+                textinfo="label+percent",
+                hoverinfo="label+value+percent",
+            )])
+            spatial_title = f"📍 {t('spatial_activity_title', lang=lang)} ({active_pet.name})"
+            fig_spatial.update_layout(
+                title={"text": spatial_title, "font": {"color": "#EFF2F8", "size": 13}},
+                paper_bgcolor="rgba(0,0,0,0)",
+                plot_bgcolor="rgba(0,0,0,0)",
+                showlegend=True,
+                legend=dict(orientation="h", yanchor="bottom", y=-0.25, xanchor="center", x=0.5, font=dict(color="#CBD5E1", size=10)),
+                margin=dict(l=10, r=10, t=35, b=25),
+                height=230,
+            )
+            st.plotly_chart(fig_spatial, width="stretch")
+
     except ImportError:
         st.info("pip install plotly")
 
@@ -1507,6 +1784,7 @@ with tab_chat:
         t("prompt_chip_1", lang=lang),
         t("prompt_chip_2", lang=lang),
         t("prompt_chip_3", lang=lang),
+        f"¿En qué habitación o cámara estuvo más tiempo {active_pet.name} hoy?" if lang == "es" else f"Which room or camera did {active_pet.name} spend the most time in today?",
     ]
     st.markdown("<div style='font-size:0.75rem;font-weight:700;color:#F59E0B;text-transform:uppercase;letter-spacing:0.08em;margin:10px 0 6px;'>💡 Quick Questions:</div>", unsafe_allow_html=True)
     clicked_chip = st.pills("Quick Questions", chips, key=f"quick_chat_pills_{active_pet.pet_id}", label_visibility="collapsed")

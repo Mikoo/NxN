@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from datetime import datetime
 from enum import Enum
-from typing import Any, List, Optional
+from typing import Any, Dict, List, Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
@@ -44,6 +44,61 @@ class MoodType(str, Enum):
     UNKNOWN = "unknown"
 
 
+class CameraProtocol(str, Enum):
+    RTSP = "rtsp"
+    USB = "usb"
+    HTTP = "http"
+
+
+class CameraProfile(BaseModel):
+    """Perfil de una cámara conectada a la red doméstica de vigilancia."""
+    camera_id: str = Field(..., description="ID único o slug de la cámara (ej. 'srihome_living', 'webcam_desk')")
+    name: str = Field(..., description="Nombre amigable de la cámara")
+    location_zone: str = Field(default="Living Room", description="Zona o habitación del hogar donde está ubicada")
+    protocol: CameraProtocol = Field(default=CameraProtocol.RTSP, description="Protocolo de conexión")
+    ip_address: Optional[str] = Field(default="192.168.1.60", description="Dirección IP o hostname en la red local")
+    port: int = Field(default=8554, ge=1, le=65535, description="Puerto de streaming")
+    username: str = Field(default="admin", description="Usuario de autenticación")
+    password: str = Field(default="", description="Contraseña de la cámara")
+    stream_path: str = Field(default="/profile0", description="Ruta del stream RTSP o HTTP")
+    usb_index: int = Field(default=0, ge=0, description="Índice de la cámara USB si el protocolo es USB")
+    custom_url: Optional[str] = Field(default=None, description="URL directa personalizada si se omite la construcción automática")
+    enabled: bool = Field(default=True, description="Si la cámara está habilitada para rondas de vigilancia centinela")
+    resolution: Optional[str] = Field(default=None, description="Resolución detectada de la cámara (ej. '2304x1296 QHD')")
+    fps: int = Field(default=25, ge=1, le=120, description="FPS estimados del stream")
+    created_at: datetime = Field(default_factory=datetime.now)
+
+    def get_stream_source(self) -> int | str:
+        """Retorna el índice USB (int) o la URL completa (str)."""
+        if self.protocol == CameraProtocol.USB:
+            return int(self.usb_index)
+        if self.custom_url and self.custom_url.strip():
+            return self.custom_url.strip()
+        auth = ""
+        if self.username:
+            pwd = f":{self.password}" if self.password else ""
+            auth = f"{self.username}{pwd}@"
+        path = self.stream_path.strip() if self.stream_path else ""
+        if not path.startswith("/"):
+            path = f"/{path}"
+        return f"{self.protocol.value}://{auth}{self.ip_address}:{self.port}{path}"
+
+    def get_masked_url(self) -> str:
+        """Retorna la URL con la contraseña enmascarada para mostrar en la interfaz de forma segura."""
+        if self.protocol == CameraProtocol.USB:
+            return f"USB Index {self.usb_index}"
+        if self.custom_url and self.custom_url.strip():
+            return self.custom_url.strip()
+        auth = ""
+        if self.username:
+            pwd = ":••••••" if self.password else ""
+            auth = f"{self.username}{pwd}@"
+        path = self.stream_path.strip() if self.stream_path else ""
+        if not path.startswith("/"):
+            path = f"/{path}"
+        return f"{self.protocol.value}://{auth}{self.ip_address}:{self.port}{path}"
+
+
 class PetProfile(BaseModel):
     """Perfil registrado de una mascota en el hogar."""
     pet_id: str = Field(..., description="ID único o slug de la mascota (ej. 'firulais', 'luna')")
@@ -61,6 +116,9 @@ class BehaviorAnalysis(BaseModel):
     pet_detected: bool = Field(default=False)
     pet_type: Optional[str] = Field(default="unknown")
     pet_id: Optional[str] = Field(default=None, description="ID de la mascota identificada")
+    camera_id: Optional[str] = Field(default=None, description="ID de la cámara de origen")
+    camera_name: Optional[str] = Field(default=None, description="Nombre de la cámara de origen")
+    location_zone: Optional[str] = Field(default=None, description="Zona física o habitación del hogar")
     activity: PetActivityType = Field(default=PetActivityType.UNKNOWN)
     posture: PetPosture = Field(default=PetPosture.UNKNOWN)
     mood: MoodType = Field(default=MoodType.UNKNOWN)
@@ -169,6 +227,7 @@ class HabitMatrixMetrics(BaseModel):
     hydration_score: float = Field(default=90.0, ge=0.0, le=100.0)
     nutrition_score: float = Field(default=90.0, ge=0.0, le=100.0)
     mobility_score: float = Field(default=90.0, ge=0.0, le=100.0)
+    zone_visits_count: Dict[str, int] = Field(default_factory=dict, description="Visitas de la mascota por zona física del hogar")
 
 
 class DailyPetReport(BaseModel):

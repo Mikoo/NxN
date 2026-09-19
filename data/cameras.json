@@ -1,0 +1,53 @@
+[
+  {
+    "camera_id": "srihome_living",
+    "name": "SriHome 2K (Living Room)",
+    "location_zone": "Living Room",
+    "protocol": "rtsp",
+    "ip_address": "192.168.1.60",
+    "port": 8554,
+    "username": "admin",
+    "password": "888888",
+    "stream_path": "/profile0",
+    "usb_index": 0,
+    "custom_url": null,
+    "enabled": true,
+    "resolution": "2304x1296 QHD",
+    "fps": 25,
+    "created_at": "2026-09-18T21:10:40.865619"
+  },
+  {
+    "camera_id": "webcam_desk",
+    "name": "Laptop Webcam (Escritorio / Estudio)",
+    "location_zone": "Estudio / Escritorio",
+    "protocol": "usb",
+    "ip_address": "192.168.1.60",
+    "port": 8554,
+    "username": "admin",
+    "password": "",
+    "stream_path": "/profile0",
+    "usb_index": 0,
+    "custom_url": null,
+    "enabled": true,
+    "resolution": "1280x720 HD",
+    "fps": 30,
+    "created_at": "2026-09-18T21:10:40.865650"
+  },
+  {
+    "camera_id": "ezviz_feeder",
+    "name": "EZVIZ H8c Pro (Comedero y Bebedero)",
+    "location_zone": "Comedero y Bebedero",
+    "protocol": "rtsp",
+    "ip_address": "192.168.1.55",
+    "port": 554,
+    "username": "admin",
+    "password": "VERIFICATION_CODE",
+    "stream_path": "/H.264/ch1/main",
+    "usb_index": 0,
+    "custom_url": null,
+    "enabled": false,
+    "resolution": "1920x1080 FHD",
+    "fps": 25,
+    "created_at": "2026-09-18T21:10:40.865654"
+  }
+]

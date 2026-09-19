@@ -304,8 +304,12 @@ class ReportGenerator:
         # Penalizacion moderada por ansiedad repetida
         anxious_count = sum(1 for e in target_events if e.mood in (MoodType.ANXIOUS, MoodType.AGITATED))
         score -= min(20.0, anxious_count * 5.0)
-
         comfort_index = max(15.0, min(100.0, round(score, 1)))
+
+        zone_visits: Dict[str, int] = {}
+        for e in target_events:
+            z = e.location_zone or (e.camera_name if e.camera_name else "Living Room")
+            zone_visits[z] = zone_visits.get(z, 0) + 1
 
         return HabitMatrixMetrics(
             water_visits_count=water_visits,
@@ -320,6 +324,7 @@ class ReportGenerator:
             hydration_score=round(hydration_score, 1),
             nutrition_score=round(nutrition_score, 1),
             mobility_score=round(mobility_score, 1),
+            zone_visits_count=zone_visits,
         )
 
     def get_cached_daily_report(self, pet_id: str, date_str: Optional[str] = None) -> Optional[DailyPetReport]:
@@ -423,6 +428,7 @@ class ReportGenerator:
         try:
             metrics = self.compute_habit_metrics(pet_id=pet_id)
             recent_activities = [e.activity.value for e in target_events[-8:]] if target_events else ["resting"]
+            zones_str = ", ".join([f"{k}: {v} detecciones" for k, v in metrics.zone_visits_count.items()]) if metrics.zone_visits_count else "Living Room"
             context_summary = (
                 f"Pet Name: {pet_name} (ID: {pet_id or 'default'})\n"
                 f"Verified events recorded today: {len(target_events)}\n"
@@ -430,6 +436,7 @@ class ReportGenerator:
                 f"Active Hours (projected): {metrics.active_hours_estimated}h ({metrics.active_bouts_count} active bouts)\n"
                 f"Sleep Hours (projected): {metrics.sleep_hours_estimated}h ({metrics.rest_bouts_count} rest bouts)\n"
                 f"Water visits: {metrics.water_visits_count} | Food visits: {metrics.food_visits_count}\n"
+                f"Household Zones Tracked across Camera Network: {zones_str}\n"
                 f"Recent behavioral sequence: {', '.join(recent_activities)}\n"
             )
 
